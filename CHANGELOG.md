@@ -6,6 +6,8 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- README: "Install on an OpenWrt access point", a step-by-step guide from a
+  freshly reset OpenWrt device to an adopted AP.
 - `scripts/deploy-openwrt.sh --env FILE` copies a local settings file to the AP
   as `.env`. The script now installs `python3`, `python3-dotenv` and
   `python3-psutil`, writes the `/usr/bin/open-omada-agent` launcher, and
