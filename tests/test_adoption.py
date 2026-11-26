@@ -131,7 +131,9 @@ def test_post_adoption_inform_is_not_factory_and_requests_reply_when_asked():
 
     assert body["needReply"] == 1
     assert body["deviceInfo"]["isFactory"] is False
-    assert int(body["deviceInfo"]["upTime"]) >= 4
+    days, clock = body["deviceInfo"]["upTime"].split(" days ")
+    hours, minutes, seconds = (int(part) for part in clock.split(":"))
+    assert int(days) * 86400 + hours * 3600 + minutes * 60 + seconds >= 4
     assert body["deviceInfo"]["model"]
 
 
@@ -146,7 +148,9 @@ def test_inform_enriches_active_hostapd_clients_with_dhcp_leases(tmp_path, monke
     monkeypatch.setattr(config, "DHCP_LEASE_FILE", str(leases))
     monkeypatch.setattr(
         "open_omada_device_agent.bootstrap.runtime.collect_openwrt_wireless_clients",
-        lambda **_kwargs: (WirelessClientState(mac="aa:bb:cc:dd:ee:ff", ssid="guest"),),
+        lambda **_kwargs: (
+            WirelessClientState(mac="aa:bb:cc:dd:ee:ff", ssid="guest", rssi=-55),
+        ),
     )
     monkeypatch.setattr(
         "open_omada_device_agent.bootstrap.runtime.collect_opennds_clients",

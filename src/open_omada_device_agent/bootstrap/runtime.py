@@ -21,7 +21,11 @@ from ..adapters.outbound.openwrt.device_profile import GenericOpenWrtAccessPoint
 from .settings import AgentSettings
 from ..projections.inform import InformAssembler, LanObservation
 from ..contexts.lifecycle.infrastructure.session_state import JsonSessionStateRepository
-from ..adapters.outbound.openwrt.telemetry import collect_openwrt_wireless_clients, collect_openwrt_wireless_inform
+from ..adapters.outbound.openwrt.telemetry import (
+    OpenWrtWirelessTelemetry,
+    collect_openwrt_wireless_clients,
+    collect_openwrt_wireless_inform,
+)
 from ..adapters.outbound.openwrt.opennds import collect_opennds_clients
 
 
@@ -69,6 +73,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             "OpenWrt bootstrap completed with warning(s): %s",
             "; ".join(bootstrap_result.warnings),
         )
+    wireless_telemetry = OpenWrtWirelessTelemetry()
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
@@ -119,7 +124,8 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             ),
             client_projection=client_stats_payload,
             wireless_projection=lambda: collect_openwrt_wireless_inform(
-                capabilities=capabilities
+                capabilities=capabilities,
+                telemetry=wireless_telemetry,
             ),
         ),
         state_repository=JsonSessionStateRepository(

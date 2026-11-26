@@ -70,6 +70,7 @@ def test_builds_idempotent_uci_batch_for_radio_and_psk_wlan():
     assert "set wireless.openomada_2g_1.ssid='Open Omada'" in batch
     assert "set wireless.openomada_2g_1.encryption='psk2'" in batch
     assert "set wireless.openomada_2g_1.key='network-passphrase'" in batch
+    assert "openomada_ssid_id" not in batch  # no controller id in this push
     assert batch[-1] == "commit wireless"
 
 
@@ -393,3 +394,18 @@ def test_controller_channel_range_drops_channels_the_radio_cannot_use():
     batch = build_uci_batch(update, _caps(radio_hardware=(hardware,)))
 
     assert "set wireless.radio1.channels='36 149'" in batch
+
+
+def test_wlan_section_records_the_controller_ssid_id_for_inform_stats():
+    update = parse_config_body(
+        {
+            "ssid_5G": {
+                "radioId": 1,
+                "ssid": [{"id": 180126366, "index": 1, "ssidName": "corp"}],
+            },
+        }
+    )
+
+    batch = build_uci_batch(update, _caps())
+
+    assert "set wireless.openomada_5g_1.openomada_ssid_id='180126366'" in batch

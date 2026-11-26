@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -29,9 +30,32 @@ class OpenWrtWirelessInterface:
     band: RadioBand | None
 
 
+# Controller 6.3.0.111 reads ``SsidStats.id`` as a primitive long; a missing id
+# throws NullPointerException in its SSID traffic statistics. ``-1`` is the value
+# it treats as "not a controller-managed SSID".
+UNMANAGED_SSID_ID = -1
+# uci option that stores the controller's SSID ``id`` on each managed wifi-iface.
+SSID_ID_OPTION = "openomada_ssid_id"
+# Controller 6.3.0.111 unboxes these ``wSettings_*`` utilisation fields (percent)
+# in its AP health checks; missing values throw NullPointerException.
+UTILIZATION_KEYS = ("busyUti", "txUti", "rxUti", "interUti")
+
+
+@dataclass(frozen=True)
+class ChannelSurvey:
+    """Cumulative ``iw survey dump`` counters for the in-use channel, in ms."""
+
+    frequency: int
+    active: int
+    busy: int
+    receive: int
+    transmit: int
+
+
 class OpenWrtWirelessTelemetry:
     def __init__(self, runner: CommandRunner | None = None) -> None:
         self._runner = runner or SubprocessRunner()
+        self._surveys: dict[str, ChannelSurvey] = {}
 
     def collect(self) -> dict[str, object]:
         try:
@@ -46,11 +70,70 @@ class OpenWrtWirelessTelemetry:
             return {}
         if not isinstance(status, Mapping):
             return {}
-        return _augment_with_hostapd_ssid_stats(
-            openwrt_wireless_inform_from_status(status),
+        payload = _augment_with_hostapd_ssid_stats(
+            openwrt_wireless_inform_from_status(status, ssid_ids=self._ssid_ids()),
             status,
             self._runner,
         )
+        self._merge_live_radio_state(payload, status)
+        return payload
+
+    def _operating_channel(self, ifname: str) -> dict[str, str]:
+        try:
+            result = self._runner.run(["iw", "dev", ifname, "info"])
+        except OSError:
+            return {}
+        if result.returncode != 0:
+            return {}
+        return parse_operating_channel(result.stdout)
+
+    def _ssid_ids(self) -> dict[str, int]:
+        try:
+            result = self._runner.run(["uci", "-q", "show", "wireless"])
+        except OSError:
+            return {}
+        if result.returncode != 0:
+            return {}
+        return parse_uci_ssid_ids(result.stdout)
+
+    def _merge_live_radio_state(
+        self,
+        payload: dict[str, object],
+        status: Mapping[str, Any],
+    ) -> None:
+        """Add the operating channel/width and channel utilisation per radio.
+
+        uci holds the configured values (``auto``, the widest allowed width);
+        a real EAP reports what the radio runs on, e.g. 20 MHz after a 2.4 GHz
+        Auto 20/40 radio fell back because of overlapping networks.
+        """
+        for radio_name, raw_radio in status.items():
+            band = _band_from_radio_name(str(radio_name))
+            info = payload.get(f"wSettings_{INFORM_SUFFIX_BY_BAND[band]}") if band else None
+            if not isinstance(raw_radio, Mapping) or not isinstance(info, dict):
+                continue
+            ifname = next(
+                (
+                    name
+                    for interface in _interfaces(raw_radio.get("interfaces"))
+                    if (name := _interface_ifname(interface))
+                ),
+                None,
+            )
+            if ifname is None:
+                continue
+            info.update(self._operating_channel(ifname))
+            try:
+                result = self._runner.run(["iw", "dev", ifname, "survey", "dump"])
+            except OSError:
+                continue
+            if result.returncode != 0:
+                continue
+            survey = parse_in_use_survey(result.stdout)
+            if survey is None:
+                continue
+            info.update(channel_utilization(self._surveys.get(ifname), survey))
+            self._surveys[ifname] = survey
 
 
 class OpenWrtHostapdClientTelemetry:
@@ -91,11 +174,17 @@ def collect_openwrt_wireless_inform(
     *,
     capabilities: PlatformCapabilities | None = None,
     runner: CommandRunner | None = None,
+    telemetry: OpenWrtWirelessTelemetry | None = None,
 ) -> dict[str, object]:
+    """Collect wireless inform keys.
+
+    Pass a long-lived ``telemetry`` so channel utilisation is measured between
+    informs instead of since the channel was last switched.
+    """
     detected = capabilities or detect_platform_capabilities()
     if detected.platform != "openwrt" or not detected.has_ubus:
         return {}
-    return OpenWrtWirelessTelemetry(runner).collect()
+    return (telemetry or OpenWrtWirelessTelemetry(runner)).collect()
 
 
 def collect_openwrt_wireless_clients(
@@ -109,7 +198,16 @@ def collect_openwrt_wireless_clients(
     return OpenWrtHostapdClientTelemetry(runner).collect()
 
 
-def openwrt_wireless_inform_from_status(status: Mapping[str, Any]) -> dict[str, object]:
+def openwrt_wireless_inform_from_status(
+    status: Mapping[str, Any],
+    *,
+    ssid_ids: Mapping[str, int] | None = None,
+) -> dict[str, object]:
+    """Map ``ubus call network.wireless status`` to inform keys.
+
+    ``ssid_ids`` maps a wifi-iface uci section to the controller's SSID id.
+    """
+    ids = ssid_ids or {}
     payload: dict[str, object] = {}
     for radio_name, raw_radio in status.items():
         if not isinstance(raw_radio, Mapping):
@@ -119,13 +217,15 @@ def openwrt_wireless_inform_from_status(status: Mapping[str, Any]) -> dict[str, 
             continue
         suffix = INFORM_SUFFIX_BY_BAND[band]
         interfaces = _interfaces(raw_radio.get("interfaces"))
-        wireless_info = _wireless_info(raw_radio, interfaces)
+        wireless_info = _wireless_info(raw_radio, interfaces, band)
         if wireless_info:
+            for key in UTILIZATION_KEYS:
+                wireless_info.setdefault(key, 0)
             payload[f"wSettings_{suffix}"] = wireless_info
         ssid_stats = tuple(
             stats
             for interface in interfaces
-            if (stats := _ssid_stats(interface)) is not None
+            if (stats := _ssid_stats(interface, ids)) is not None
         )
         if ssid_stats:
             payload[f"ssidStats_{suffix}"] = list(ssid_stats)
@@ -276,9 +376,9 @@ def _upsert_ssid_stats(
                 merged.update(stats)
                 existing[index] = merged
                 return
-        existing.append(stats)
+        existing.append({"id": UNMANAGED_SSID_ID, **stats})
         return
-    payload[key] = [stats]
+    payload[key] = [{"id": UNMANAGED_SSID_ID, **stats}]
 
 
 def _merge_radio_station_count(
@@ -318,33 +418,68 @@ def _merge_radio_traffic(
 def _wireless_info(
     radio: Mapping[str, Any],
     interfaces: tuple[Mapping[str, Any], ...],
+    band: RadioBand,
 ) -> dict[str, object]:
     config = _mapping(radio.get("config"))
     info: dict[str, object] = {}
     channel = config.get("channel") or radio.get("channel")
     if channel not in (None, ""):
-        info["ch"] = str(channel)
+        info["ch"] = _omada_channel(channel)
     band_width = config.get("htmode") or config.get("bandwidth") or radio.get("htmode")
     if band_width not in (None, ""):
         info["bw"] = str(band_width)
-    radio_mode = config.get("hwmode") or config.get("mode") or radio.get("hwmode")
-    if radio_mode not in (None, ""):
-        info["rdMode"] = str(radio_mode)
-    tx_power = config.get("txpower") or radio.get("txpower")
-    if tx_power not in (None, ""):
-        info["txPower"] = str(tx_power)
+    radio_mode = _omada_radio_mode(band, str(band_width or ""))
+    if radio_mode is not None:
+        info["rdMode"] = radio_mode
+    tx_power = _omada_tx_power(config.get("txpower") or radio.get("txpower"))
+    if tx_power is not None:
+        info["txPower"] = tx_power
     station_total = sum(_station_count(interface) for interface in interfaces)
     if station_total:
         info["staNum"] = station_total
     return info
 
 
-def _ssid_stats(interface: Mapping[str, Any]) -> dict[str, object] | None:
+def _omada_channel(value: object) -> str:
+    """Omada parses ``wSettings_*.ch`` as an integer; Auto is reported as 0.
+
+    OpenWrt uses ``channel='auto'`` for ACS, and sending "auto" makes the
+    controller's inform handler throw NumberFormatException on every inform.
+    """
+    text = str(value).strip()
+    return text if text.isdigit() else "0"
+
+
+def _omada_tx_power(value: object) -> str | None:
+    """Format OpenWrt ``txpower`` (dBm) the way Omada's WLAN inform decoder expects.
+
+    Controller 6.2.14.11 and 6.3.0.111 parse ``wSettings_*.txPower`` by cutting the
+    string at its unit suffix; a bare number such as ``"20"`` raises
+    StringIndexOutOfBoundsException in ApWlanInformDecoder, the inform is dropped and
+    the device flips to "Heartbeat Missed". ``"20dBm"`` is accepted (validated in lab).
+    """
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if text.lower().endswith("dbm"):
+        text = text[:-3].strip()
+    try:
+        dbm = int(float(text))
+    except ValueError:
+        return None
+    return f"{dbm}dBm"
+
+
+def _ssid_stats(
+    interface: Mapping[str, Any],
+    ssid_ids: Mapping[str, int],
+) -> dict[str, object] | None:
     config = _mapping(interface.get("config"))
     ssid = config.get("ssid") or interface.get("ssid")
     if not ssid:
         return None
     stats: dict[str, object] = {
+        "id": ssid_ids.get(str(interface.get("section") or ""), UNMANAGED_SSID_ID),
         "ssid": str(ssid),
         "clntNum": _station_count(interface),
     }
@@ -459,3 +594,126 @@ def _band_from_radio_name(name: str) -> RadioBand | None:
     if normalized in {"radio3", "6g"}:
         return RadioBand.SIX_G
     return None
+
+
+_UCI_SSID_ID = re.compile(
+    rf"^wireless\.([A-Za-z0-9_]+)\.{SSID_ID_OPTION}='?(-?\d+)'?$"
+)
+
+
+def parse_uci_ssid_ids(text: str) -> dict[str, int]:
+    """Read ``wireless.<section>.openomada_ssid_id`` lines from ``uci show``."""
+    ids: dict[str, int] = {}
+    for line in text.splitlines():
+        match = _UCI_SSID_ID.match(line.strip())
+        if match:
+            ids[match.group(1)] = int(match.group(2))
+    return ids
+
+
+_SURVEY_FIELDS = {
+    "channel active time": "active",
+    "channel busy time": "busy",
+    "channel receive time": "receive",
+    "channel transmit time": "transmit",
+}
+
+
+def parse_in_use_survey(text: str) -> ChannelSurvey | None:
+    """Return the ``[in use]`` channel block of ``iw dev <if> survey dump``."""
+    values: dict[str, int] | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("frequency:"):
+            if values is not None:
+                break
+            if "[in use]" in line:
+                match = re.search(r"(\d+)", line)
+                values = {"frequency": int(match.group(1)) if match else 0}
+            continue
+        if values is None or ":" not in line:
+            continue
+        name, _, rest = line.partition(":")
+        field = _SURVEY_FIELDS.get(name.strip())
+        match = re.match(r"\s*(\d+)", rest)
+        if field and match:
+            values[field] = int(match.group(1))
+    if values is None or "active" not in values or "busy" not in values:
+        return None
+    return ChannelSurvey(
+        frequency=values["frequency"],
+        active=values["active"],
+        busy=values["busy"],
+        receive=values.get("receive", 0),
+        transmit=values.get("transmit", 0),
+    )
+
+
+def channel_utilization(
+    previous: ChannelSurvey | None,
+    current: ChannelSurvey,
+) -> dict[str, int]:
+    """Percent of channel time busy/tx/rx/other since ``previous``.
+
+    Counters reset when the radio changes channel; fall back to the cumulative
+    values then, and on the first sample.
+    """
+    base = previous
+    if (
+        base is None
+        or base.frequency != current.frequency
+        or current.active <= base.active
+        or current.busy < base.busy
+    ):
+        base = ChannelSurvey(current.frequency, 0, 0, 0, 0)
+    active = current.active - base.active
+    if active <= 0:
+        return dict.fromkeys(UTILIZATION_KEYS, 0)
+
+    def percent(value: int) -> int:
+        return max(0, min(100, round(value * 100 / active)))
+
+    busy = current.busy - base.busy
+    transmit = max(0, current.transmit - base.transmit)
+    receive = max(0, current.receive - base.receive)
+    return {
+        "busyUti": percent(busy),
+        "txUti": percent(transmit),
+        "rxUti": percent(receive),
+        "interUti": percent(max(0, busy - transmit - receive)),
+    }
+
+
+_IW_CHANNEL = re.compile(r"^\s*channel\s+(\d+)\s+\(\d+ MHz\),\s*width:\s*(\d+)\s*MHz", re.M)
+
+
+def parse_operating_channel(text: str) -> dict[str, str]:
+    """``ch``/``bw`` from ``iw dev <if> info``, e.g. ``channel 149 (5745 MHz), width: 80 MHz``.
+
+    A real EAP reports ``bw`` as ``"80MHz"`` (seen on an EAP650 via the controller).
+    """
+    match = _IW_CHANNEL.search(text)
+    if match is None:
+        return {}
+    return {"ch": match.group(1), "bw": f"{match.group(2)}MHz"}
+
+
+_MODE_BY_FAMILY = {
+    # The controller UI shows "802.11" + rdMode; a real EAP650 reports
+    # "a/n/ac/ax mixed" on 5 GHz.
+    (True, "EHT"): "b/g/n/ax/be mixed",
+    (True, "HE"): "b/g/n/ax mixed",
+    (True, "VHT"): "b/g/n mixed",
+    (True, "HT"): "b/g/n mixed",
+    (False, "EHT"): "a/n/ac/ax/be mixed",
+    (False, "HE"): "a/n/ac/ax mixed",
+    (False, "VHT"): "a/n/ac mixed",
+    (False, "HT"): "a/n mixed",
+}
+
+
+def _omada_radio_mode(band: RadioBand | None, htmode: str) -> str | None:
+    match = re.match(r"^(EHT|HE|VHT|HT)", htmode.upper())
+    if band is None or match is None:
+        return None
+    return _MODE_BY_FAMILY.get((band is RadioBand.TWO_G, match.group(1)))

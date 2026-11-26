@@ -376,6 +376,12 @@ def _wlan_lines(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> tu
         f"delete wireless.{section}",
         f"set wireless.{section}=wifi-iface",
         _set("wireless", section, "openomada_managed", "1"),
+        *(
+            # Echoed back as ssidStats_*.id in the inform (telemetry.SSID_ID_OPTION).
+            (_set("wireless", section, "openomada_ssid_id", str(wlan.ssid_id)),)
+            if wlan.ssid_id is not None
+            else ()
+        ),
         _set("wireless", section, "device", device),
         _set("wireless", section, "mode", "ap"),
         _set("wireless", section, "network", network),
