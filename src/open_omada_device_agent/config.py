@@ -86,6 +86,18 @@ def mac_is_random(interface: str, sys_class_net: Path = Path("/sys/class/net")) 
     return False
 
 
+def random_mac_message(bridge: str, device_mac: str) -> str:
+    """Startup warning for a bridge whose MAC changes at every boot."""
+    return (
+        f"{bridge} has a random MAC that changes at every boot, so a controller "
+        "\"Use Fixed IP Address\" reservation cannot match this AP. Pin a fixed "
+        f"MAC with option macaddr '<MAC>' in the {bridge} device section of "
+        "/etc/config/network, preferably the MAC on the device's label. To keep "
+        f"the identity the controller knows, use {device_mac}; for any other MAC, "
+        f"delete {DEVICE_MAC_FILE}, then forget and re-adopt the AP after the reboot."
+    )
+
+
 def default_device_mac(
     env: dict[str, str] | None = None,
     sys_class_net: Path = Path("/sys/class/net"),

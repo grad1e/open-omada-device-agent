@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from open_omada_device_agent.config import PLACEHOLDER_MAC, default_device_mac, mac_is_random
+from open_omada_device_agent.config import (
+    PLACEHOLDER_MAC,
+    default_device_mac,
+    mac_is_random,
+    random_mac_message,
+)
 
 
 def _sys(root: Path, **interfaces: str) -> Path:
@@ -59,3 +64,12 @@ def test_random_mac_detected_through_bridge_port(tmp_path):
     (fixed / "br-lan" / "brif").mkdir()
     (fixed / "br-lan" / "brif" / "lan1").mkdir()
     assert not mac_is_random("br-lan", fixed)
+
+
+def test_random_mac_warning_points_to_the_label_mac():
+    message = random_mac_message("br-lan", "02:aa:bb:cc:dd:01")
+
+    assert "label" in message
+    assert "option macaddr '<MAC>'" in message  # not the random MAC as the fix
+    assert "02:aa:bb:cc:dd:01" in message  # still offered to keep the identity
+    assert "re-adopt" in message
