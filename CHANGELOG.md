@@ -123,6 +123,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- IP Settings: when the watchdog cannot restore `/etc/config/network`, it
+  keeps the backup and logs "IP Settings rollback FAILED" instead of marking
+  the change as rolled back and deleting the backup.
 - The random-MAC startup warning recommends pinning the MAC on the device's
   label instead of the random MAC from the first boot, and says how to
   re-adopt when the MAC changes.
