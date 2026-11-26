@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from . import config
 from .util.mac_format import to_omada
-from .network_tools import get_public_ip
+from .network_tools import get_device_ip
 from .system_tools import get_cpu_utilization, get_memory_utilization, get_system_uptime
 
 
 def device_info() -> dict:
     mac = to_omada(config.MAC)
-    ip_address = get_public_ip()
+    ip_address = get_device_ip(controller_host=config.CONTROLLER_HOST)
     up_time = get_system_uptime()
     cpu_utilization = get_cpu_utilization()
     mem_utilization = get_memory_utilization()

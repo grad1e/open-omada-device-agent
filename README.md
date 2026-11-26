@@ -140,6 +140,11 @@ OMADA_DEVICE_PASSWORD=your-device-account-password
 The Device Account password is read only from the environment and is **never
 written to the managed-state file**.
 
+For the **first adoption** of a factory-state agent, the controller expects the
+factory credentials `admin` / `admin`; switch to the site Device Account password
+after the device is Connected. See
+[Device Account authentication](docs/configuration.md#device-account-authentication).
+
 ### 3. Run the agent
 
 ```bash

@@ -45,10 +45,19 @@ characters and Site IDs 24 characters.
 | `OMADA_DEVICE_HARDWARE_VERSION` | `4.0` |
 | `OMADA_DEVICE_FIRMWARE_VERSION` | `5.0.4` |
 | `OMADA_CUSTOMIZE_REGION` | `841` |
-| `OMADA_DEVICE_IP` | `0.0.0.0` |
+| `OMADA_DEVICE_IP` | `local` |
 
-`OMADA_DEVICE_IP=auto` enables a best-effort external public-IP lookup. This is
-off by default so the agent does not unexpectedly contact a third-party service.
+`OMADA_DEVICE_IP=local` (the default) advertises the address this host uses to
+reach `OMADA_CONTROLLER_HOST`, found by a UDP route lookup that sends no
+packet. It is re-evaluated for every inform, so a DHCP change is picked up.
+If there is no route, `0.0.0.0` is advertised.
+
+Set a concrete address to override it. `OMADA_DEVICE_IP=auto` performs a
+best-effort public-IP lookup through `OMADA_PUBLIC_IP_LOOKUP_URL`, a
+third-party service.
+
+Controller 6.2.14.11 and 6.3.0.111 display the advertised value as-is in the
+device list (Observed).
 
 ## Device Account authentication
 
@@ -60,6 +69,17 @@ off by default so the agent does not unexpectedly contact a third-party service.
 
 If the username is omitted, the agent requests it from the controller during
 pre-connect.
+
+**First adoption uses the factory credentials.** While the agent reports
+`isFactory=true` (no managed state yet), the controller verifies it against the
+factory default Device Account `admin` / `admin`, not the site Device Account.
+After adoption the controller provisions the site Device Account, and later
+reconnects verify with that password (Observed on Controller 6.2.14.11 and
+6.3.0.111). For a first adoption, set `OMADA_DEVICE_USERNAME=admin` and
+`OMADA_DEVICE_PASSWORD=admin`, then switch `OMADA_DEVICE_PASSWORD` to the site
+Device Account password once the device shows as Connected. A mismatch shows in
+the controller as "username or password incorrect" and in its log as
+`device auth is error, adopt info is wrong`.
 
 Never commit `.env`.
 

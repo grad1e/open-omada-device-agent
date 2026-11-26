@@ -50,10 +50,10 @@ HARDWARE_VERSION = os.getenv("OMADA_DEVICE_HARDWARE_VERSION", "4.0")
 FIRMWARE_VERSION = os.getenv("OMADA_DEVICE_FIRMWARE_VERSION", "5.0.4")
 CUSTOMIZE_REGION = _int("OMADA_CUSTOMIZE_REGION", 841)
 
-# Advertised device IP. Keep 0.0.0.0 by default and let the controller observe
-# the transport source address. Set this explicitly when a concrete address is
-# required, or use "auto" to perform a best-effort public-IP lookup.
-DEVICE_IP = os.getenv("OMADA_DEVICE_IP", "0.0.0.0").strip()
+# Advertised device IP. "local" (default) advertises the address this host uses
+# to reach the controller. Set a concrete address to override it, or "auto" for
+# a best-effort public-IP lookup through a third-party service.
+DEVICE_IP = os.getenv("OMADA_DEVICE_IP", "local").strip()
 PUBLIC_IP_LOOKUP_URL = os.getenv("OMADA_PUBLIC_IP_LOOKUP_URL", "https://api.ipify.org").strip()
 PUBLIC_IP_LOOKUP_TIMEOUT = _float("OMADA_PUBLIC_IP_LOOKUP_TIMEOUT", 2.0)
 

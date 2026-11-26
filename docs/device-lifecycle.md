@@ -86,6 +86,11 @@ The agent requests the Device Account username when needed and uses the locally
 configured password to complete the supported legacy verification branch.
 Credential rejection is recoverable and does not terminate the supervisor.
 
+For a factory-state device (`isFactory=true`) the controller verifies against
+the factory default `admin` / `admin`; the site Device Account applies only after
+adoption has provisioned it (Observed on Controller 6.2.14.11 and 6.3.0.111).
+See [Device Account authentication](configuration.md#device-account-authentication).
+
 ### Negotiation and sync
 
 `DEVICE_NEGOTIATION` advertises the reference profile and a conservative

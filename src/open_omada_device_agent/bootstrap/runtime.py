@@ -16,7 +16,7 @@ from ..adapters.outbound.openwrt.client_observations import (
     load_dnsmasq_leases,
     merge_associated_wireless_client_states,
 )
-from ..network_tools import get_public_ip
+from ..network_tools import get_device_ip
 from ..adapters.outbound.openwrt.device_profile import GenericOpenWrtAccessPointProfile
 from .settings import AgentSettings
 from ..projections.inform import InformAssembler, LanObservation
@@ -77,8 +77,9 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
-            get_public_ip,
+            get_device_ip,
             settings.device_ip,
+            settings.controller_host,
             settings.public_ip_lookup_url,
             settings.public_ip_lookup_timeout,
         ),
