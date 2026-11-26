@@ -127,6 +127,7 @@ OMADA_TLS_CA_FILE=/etc/open-omada/controller-ca.pem
 | `OMADA_CAP_CLIENT_RATE_LIMITS` | `false` | Enable nftables client rate-limit enforcement |
 | `OMADA_CAP_IP_SETTINGS` | `false` | Apply Device Config → IP Settings to the LAN interface, with a 3-minute rollback if the controller is unreachable afterwards. In DHCP mode the fallback address is used after 30 s without a lease |
 | `OMADA_CAP_SNMP` | `true` on OpenWrt when `snmpd` is installed | Apply Services → SNMP to `/etc/config/snmpd` |
+| `OMADA_CAP_TIMEZONE` | `true` on OpenWrt with `uci` | Set OpenWrt's system time zone from the site time zone the controller sends at every connect |
 | `OMADA_CAP_LLDP` | `true` on OpenWrt when `lldpd` and `lldpcli` are installed | Run LLDP with `lldpd` on the LAN bridge's wired ports when the controller turns it on, and report neighbours |
 | `OMADA_CAP_ROGUE_AP_SCAN` | `true` on OpenWrt when `iw` lists the radios | Answer the controller's Interference Detection scan with `iw dev <ap> scan ap-force` |
 

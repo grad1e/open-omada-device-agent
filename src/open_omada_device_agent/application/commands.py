@@ -4,7 +4,7 @@ from typing import Any, Mapping
 
 from ..contexts.clients.domain import ClientAuthConfig, ClientControlOperation, ClientRateConfig
 from ..contexts.device.domain import (
-    LedConfig, LldpConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig,
+    LedConfig, LldpConfig, NetworkCheckRequest, SnmpConfig, TimeZoneSetting, WifiControlLedConfig,
 )
 from ..contexts.networking.domain import LanIpSetting, ManagementVlan
 from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
@@ -31,6 +31,7 @@ class ApplyDeviceConfigurationCommand:
     network_checks: tuple[NetworkCheckRequest, ...] = ()
     snmp: SnmpConfig | None = None
     lldp: LldpConfig | None = None
+    time_zone: TimeZoneSetting | None = None
     lan_ip: LanIpSetting | None = None
     radio_advanced: tuple[RadioAdvancedConfig, ...] = ()
     passive_keys: tuple[str, ...] = ()

@@ -30,6 +30,31 @@ class LldpConfig:
     enabled: bool = False
 
 
+MIN_UTC_OFFSET_MINUTES = -12 * 60
+MAX_UTC_OFFSET_MINUTES = 14 * 60
+# ``timeSetting.timeZone`` is the site's standard UTC offset in minutes plus 720
+# (Observed: 1050 for UTC+05:30 on Controller 6.3.0.111).
+TIME_ZONE_BASE = 720
+
+
+@dataclass(frozen=True)
+class DaylightSaving:
+    """``dst`` from the controller, kept as sent until its format is known."""
+
+    enabled: bool = False
+    start: int = 0
+    end: int = 0
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class TimeZoneSetting:
+    """Site time zone (``timeSetting`` + ``dst``) sent at every connect."""
+
+    utc_offset_minutes: int
+    daylight_saving: DaylightSaving = field(default_factory=DaylightSaving)
+
+
 # SNMPv3 enums used by the controller UI (Config -> Services -> SNMP).
 SNMP_SECURITY_LEVELS = {0: "noAuthNoPriv", 1: "authNoPriv", 2: "authPriv"}
 SNMP_AUTH_MODES = {1: "MD5", 2: "SHA"}

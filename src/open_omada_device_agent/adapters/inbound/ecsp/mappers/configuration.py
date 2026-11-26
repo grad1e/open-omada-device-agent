@@ -9,7 +9,8 @@ from .....contexts.clients.domain import (
     ClientAuthConfig, ClientControlOperation, ClientRateConfig, ClientRateLimit,
 )
 from .....contexts.device.domain import (
-    LedConfig, LldpConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig,
+    MAX_UTC_OFFSET_MINUTES, MIN_UTC_OFFSET_MINUTES, TIME_ZONE_BASE, DaylightSaving,
+    LedConfig, LldpConfig, NetworkCheckRequest, SnmpConfig, TimeZoneSetting, WifiControlLedConfig,
 )
 from .....contexts.networking.domain import LanIpSetting, ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
@@ -93,8 +94,10 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "portalConfigList",
     "portalFreePolicyConfig",
     "rogueApScan",
+    "dst",
     "lldp",
     "snmp",
+    "timeSetting",
     "wifiControlLed",
 } | set(NETWORK_CHECK_KEYS)
 
@@ -193,6 +196,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         network_checks=_parse_network_checks(body),
         snmp=_parse_snmp(body.get("snmp")),
         lldp=_parse_lldp(body.get("lldp")),
+        time_zone=parse_time_zone(body),
         lan_ip=_parse_lan_setting(body.get("lanSetting")),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
@@ -231,6 +235,35 @@ def _parse_lan_setting(raw: Any) -> LanIpSetting | None:
         fallback_netmask=text("fallBackMask"),
         fallback_gateway=text("fallbackGateway"),
     )
+
+
+def parse_time_zone(body: Mapping[str, Any]) -> TimeZoneSetting | None:
+    """``timeSetting.timeZone`` (offset + 720) and ``dst``; None if unusable."""
+    raw = body.get("timeSetting")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        code = _optional_int(raw.get("timeZone"))
+    except (TypeError, ValueError):
+        return None
+    if code is None:
+        return None
+    offset = code - TIME_ZONE_BASE
+    if not MIN_UTC_OFFSET_MINUTES <= offset <= MAX_UTC_OFFSET_MINUTES or offset % 15:
+        return None
+    dst = body.get("dst")
+    daylight_saving = DaylightSaving()
+    if isinstance(dst, Mapping):
+        try:
+            daylight_saving = DaylightSaving(
+                enabled=bool(_optional_bool(dst.get("enable"))),
+                start=_optional_int(dst.get("start")) or 0,
+                end=_optional_int(dst.get("end")) or 0,
+                offset=_optional_int(dst.get("offset")) or 0,
+            )
+        except (TypeError, ValueError):
+            daylight_saving = DaylightSaving()
+    return TimeZoneSetting(utc_offset_minutes=offset, daylight_saving=daylight_saving)
 
 
 def _parse_lldp(raw: Any) -> LldpConfig | None:
