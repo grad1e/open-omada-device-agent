@@ -12,8 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Only 3.11-3.13 are required checks on develop; 3.14 is an early warning.
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout
