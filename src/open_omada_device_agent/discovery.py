@@ -363,7 +363,19 @@ def _run_cycle(
                     raise RuntimeError(
                         f"discovery JSON is {payload_len} bytes; controller maximum is {MAX_DISCOVERY_PAYLOAD}"
                     )
-                sock.sendto(frame, target)
+                try:
+                    sock.sendto(frame, target)
+                except OSError as exc:
+                    # No route yet (DHCP, link or address change): retry later.
+                    log.warning(
+                        "Discovery to %s:%d failed: %s; retrying in %.0fs",
+                        target[0],
+                        target[1],
+                        exc,
+                        services.settings.discovery_interval,
+                    )
+                    next_send = now + services.settings.discovery_interval
+                    continue
                 log.info(
                     "TX DISCOVERY type=1 seq=%d mac=%s bytes=%d -> %s:%d",
                     seq,

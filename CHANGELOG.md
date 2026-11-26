@@ -21,8 +21,10 @@ All notable project changes will be documented in this file.
   `/etc/config/network` after 3 minutes unless the agent reaches the
   controller from the new address. The agent reconnects from the new address,
   and does not retry a change that was rolled back until the next reboot. The
-  current address is reported to the controller at adoption. The DHCP
-  fallback address is not applied.
+  current address is reported to the controller at adoption. In DHCP mode
+  the controller's fallback address is added after 30 seconds without a
+  DHCP lease, with a default route through the fallback gateway when there is
+  none, and removed when a lease arrives.
 - Site Network Config → SSH is documented as not applied by design: the agent
   leaves dropbear alone.
 - Device Config → Services → SNMP and the site SNMP settings: the agent
@@ -123,6 +125,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- Discovery no longer crashes the agent when the AP briefly has no route to
+  the controller (for example right after an address change); it logs and
+  retries.
 - `OMADA_DEVICE_MAC` accepts the label form (`02-AA-BB-CC-DD-EE` or
   `02AABBCCDDEE`) and is lower-cased; an invalid value now stops the agent
   with a clear error instead of being sent to the controller as is.
