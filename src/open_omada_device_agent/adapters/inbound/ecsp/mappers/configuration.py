@@ -8,7 +8,9 @@ from .....application.commands import ApplyDeviceConfigurationCommand
 from .....contexts.clients.domain import (
     ClientAuthConfig, ClientControlOperation, ClientRateConfig, ClientRateLimit,
 )
-from .....contexts.device.domain import LedConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig
+from .....contexts.device.domain import (
+    LedConfig, LldpConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig,
+)
 from .....contexts.networking.domain import LanIpSetting, ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
@@ -57,7 +59,6 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
     "controllerSetting",
     "ipGroup",
     "ipv6Group",
-    "lldp",
     "logSetting",
     "macFilterGlobal",
     "schedulerGlobal",
@@ -92,6 +93,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "portalConfigList",
     "portalFreePolicyConfig",
     "rogueApScan",
+    "lldp",
     "snmp",
     "wifiControlLed",
 } | set(NETWORK_CHECK_KEYS)
@@ -190,6 +192,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         rogue_ap_scan=body.get("rogueApScan") is not None,
         network_checks=_parse_network_checks(body),
         snmp=_parse_snmp(body.get("snmp")),
+        lldp=_parse_lldp(body.get("lldp")),
         lan_ip=_parse_lan_setting(body.get("lanSetting")),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
@@ -228,6 +231,13 @@ def _parse_lan_setting(raw: Any) -> LanIpSetting | None:
         fallback_netmask=text("fallBackMask"),
         fallback_gateway=text("fallbackGateway"),
     )
+
+
+def _parse_lldp(raw: Any) -> LldpConfig | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, "lldp")
+    return LldpConfig(enabled=bool(_optional_bool(data.get("enable"))))
 
 
 def _parse_snmp(raw: Any) -> SnmpConfig | None:

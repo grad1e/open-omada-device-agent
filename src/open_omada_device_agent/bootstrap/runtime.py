@@ -14,6 +14,7 @@ from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
 from ..adapters.outbound.openwrt.network_check import OpenWrtNetworkCheck
 from ..adapters.outbound.openwrt.snmp import OpenWrtSnmpAdapter
+from ..adapters.outbound.openwrt.lldp import OpenWrtLldpAdapter
 from ..adapters.outbound.openwrt.dhcp_fallback import DhcpFallback, start_dhcp_fallback
 from ..adapters.outbound.openwrt.ip_settings import OpenWrtIpSettings
 from ..application.notifications import OutboundNotifications
@@ -130,6 +131,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         capabilities=capabilities,
         lan_setting=ip_settings.report if capabilities.supports_ip_settings else None,
     )
+    lldp = OpenWrtLldpAdapter(bridge=settings.openwrt_lan_bridge, lan_port=settings.lan_port)
     return AgentRuntime(
         configuration=ApplyDeviceConfiguration(
             capability_detector=lambda: capabilities,
@@ -161,6 +163,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 rogue_ap_scanner,
                 OpenWrtNetworkCheck(notifications.put),
                 OpenWrtSnmpAdapter(),
+                lldp,
                 ip_settings,
             ),
             allow_ack_only_config=settings.lab_ack_control_plane_config,
@@ -180,6 +183,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 telemetry=wireless_telemetry,
             ),
             rogue_aps=rogue_ap_scanner.inform_items,
+            lldp=lldp.inform_item if capabilities.supports_lldp else None,
         ),
         state_repository=state_repository,
         settings=settings,

@@ -27,6 +27,12 @@ All notable project changes will be documented in this file.
   none, and removed when a lease arrives.
 - Site Network Config → SSH is documented as not applied by design: the agent
   leaves dropbear alone.
+- Device Config → Services → LLDP: when `lldpd` is installed the agent
+  advertises LLDP support, runs LLDP (only LLDP, not CDP/FDP/SONMP/EDP) on the
+  LAN bridge's wired ports while the controller has it on, stops lldpd when
+  it is off, and reports the LLDP neighbours it hears in the inform.
+  `scripts/deploy-openwrt.sh` installs `lldpd` and leaves it stopped until
+  LLDP is enabled. `OMADA_CAP_LLDP=false` turns it off.
 - Device Config → Services → SNMP and the site SNMP settings: the agent
   advertises the `snmp` component when net-snmp's `snmpd` is installed and
   writes `/etc/config/snmpd` from SET key `snmp`: Location, Contact, the

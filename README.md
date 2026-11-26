@@ -36,7 +36,7 @@ welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
   use per radio.
 - **Tools:** Locate (blinks an LED), Network Check (ping, traceroute, DNS,
   ARP) and the interference scan.
-- **Optional:** IP Settings, SNMP, SSID and management VLANs, and a captive
+- **Optional:** IP Settings, SNMP, LLDP, SSID and management VLANs, and a captive
   portal on a separate guest network.
 
 Not yet: guest logout from the portal, firmware upgrade, mesh, and

@@ -78,4 +78,9 @@ def ap_components_v2(
         # keep the SNMPv3 security level, auth/privacy modes and privacy
         # password; below that it sends only the v3 username and password.
         components.update({"snmp": "1.0", "service": "1.1"})
+    if capabilities.supports_lldp:
+        # Controller 6.3.0.111 shows the per-AP LLDP switch for devCap.supportLldp
+        # and treats enable=1 as unsupported without the ``lldp`` component;
+        # neighbours travel in the inform key ``lldp`` (``lldpInform``).
+        components.update({"lldp": "1.0", "lldpInform": "1.0"})
     return components

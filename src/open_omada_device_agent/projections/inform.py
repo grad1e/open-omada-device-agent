@@ -20,6 +20,7 @@ class InformAssembler:
         client_projection: Callable[[tuple[WirelessClientState, ...]], list[dict[str, Any]]],
         wireless_projection: Callable[[], Mapping[str, Any]],
         rogue_aps: Callable[[], list[dict[str, Any]]] | None = None,
+        lldp: Callable[[], Mapping[str, Any] | None] | None = None,
     ) -> None:
         self._device_info = device_info
         self._lan = lan
@@ -27,6 +28,7 @@ class InformAssembler:
         self._client_projection = client_projection
         self._wireless_projection = wireless_projection
         self._rogue_aps = rogue_aps
+        self._lldp = lldp
 
     def build(self, *, need_reply: bool, uptime: int) -> dict[str, Any]:
         info = dict(self._device_info())
@@ -62,6 +64,9 @@ class InformAssembler:
         rogue_aps = self._rogue_aps() if self._rogue_aps is not None else []
         if rogue_aps:
             body["rogueApList"] = rogue_aps
+        lldp = self._lldp() if self._lldp is not None else None
+        if lldp is not None:
+            body["lldp"] = lldp
         return body
 
 
