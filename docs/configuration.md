@@ -259,7 +259,10 @@ With openNDS installed, the agent:
 - sets `gatewayfqdn=disable` so the openNDS preauth redirect uses the gateway
   IP instead of the local-only `status.client` hostname. This avoids breaking
   captive portal flow on clients that ignore DHCP DNS and use a custom resolver;
-- applies `clientConfig.unauth=false` with `ndsctl auth`;
+- applies `clientConfig.unauth=false` and controller portal logins
+  (`EVENT_PORTAL_AUTH`) with `ndsctl auth`. The session length is the
+  login's `end - start`, so it follows the portal's Authentication Timeout;
+  without those fields openNDS uses its own `sessiontimeout`;
 - applies `clientConfig.unauth=true` with `ndsctl deauth`;
 - clears conntrack entries for the client IP after deauth when `conntrack` is
   installed;

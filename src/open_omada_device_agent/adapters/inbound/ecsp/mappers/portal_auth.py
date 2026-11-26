@@ -65,8 +65,33 @@ def _parse_authed_user(raw: Mapping[str, Any]) -> ClientAuthConfig | None:
             "EVENT_PORTAL_AUTH.authedUsers.mac",
         ),
         unauthenticated=result == 0,
+        session_timeout_seconds=_session_seconds(raw.get("start"), raw.get("end")),
         raw=dict(raw),
     )
+
+
+# Epoch values above this are milliseconds (seconds reach it only in 5138).
+_EPOCH_MS_THRESHOLD = 100_000_000_000
+
+
+def _session_seconds(start: Any, end: Any) -> int | None:
+    """Return the portal session length from ``start``/``end`` epochs.
+
+    The controller fills ``start``/``end`` from the portal's Authentication
+    Timeout. Using the difference keeps the AP clock out of it; values in
+    milliseconds are detected by magnitude.
+    """
+    try:
+        start_value = _optional_int(start)
+        end_value = _optional_int(end)
+    except (TypeError, ValueError):
+        return None
+    if start_value is None or end_value is None or end_value <= start_value:
+        return None
+    duration = end_value - start_value
+    if start_value >= _EPOCH_MS_THRESHOLD:
+        duration //= 1000
+    return duration or None
 
 
 def _required_str(value: Any, field: str) -> str:

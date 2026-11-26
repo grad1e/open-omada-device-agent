@@ -422,6 +422,7 @@ def test_portal_auth_request_applies_hyphenated_omada_mac_and_replies():
     client_config = configuration.updates[0].client_configs[0]
     assert client_config.client_mac == "9E-27-26-62-6D-EC"
     assert client_config.unauthenticated is False
+    assert client_config.session_timeout_seconds == 3600
     assert client_config.raw["ssid"] == "Ubatuba - Wifi Grátis"
     message = decode_frame(sock.sent)
     assert message["header"]["type"] == int(MessageType.EVENT_PORTAL_AUTH_RESPONSE)

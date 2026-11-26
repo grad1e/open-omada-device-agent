@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import ipaddress
 import logging
 import re
@@ -272,7 +273,7 @@ class OpenWrtClientControlAdapter:
             result = (
                 self._deauthenticate_portal_client(mac)
                 if item.unauthenticated
-                else self._authenticate_portal_client(mac)
+                else self._authenticate_portal_client(mac, item.session_timeout_seconds)
             )
             if not result.applied:
                 return result
@@ -350,9 +351,24 @@ class OpenWrtClientControlAdapter:
             )
         return DeviceCommandResult(applied=True, changed=True)
 
-    def _authenticate_portal_client(self, mac: str) -> DeviceCommandResult:
-        result = self._runner.run(["ndsctl", "auth", mac, "", "", "", "", "", ""])
+    def _authenticate_portal_client(
+        self,
+        mac: str,
+        session_timeout_seconds: int | None = None,
+    ) -> DeviceCommandResult:
+        # ndsctl takes the session timeout in minutes; empty keeps the
+        # openNDS default (sessiontimeout, 1440 min unless configured).
+        timeout = (
+            str(max(1, math.ceil(session_timeout_seconds / 60)))
+            if session_timeout_seconds
+            else ""
+        )
+        result = self._runner.run(["ndsctl", "auth", mac, timeout, "", "", "", "", ""])
         if result.returncode != 0:
+            # The controller can send the same login twice; openNDS refuses
+            # to authenticate a client that already is.
+            if self._portal_client_authenticated(mac):
+                return DeviceCommandResult(applied=True, changed=False)
             return DeviceCommandResult(
                 applied=False,
                 error=(result.stderr or result.stdout or "ndsctl auth failed").strip(),
@@ -371,7 +387,12 @@ class OpenWrtClientControlAdapter:
             self._flush_portal_client_conntrack(client_ip)
         return DeviceCommandResult(applied=True, changed=True)
 
-    def _portal_client_ip(self, mac: str) -> str | None:
+    def _portal_client(self, mac: str) -> dict | None:
+        """Return the openNDS record for ``mac``.
+
+        ``ndsctl json <mac>`` prints the client fields at the top level;
+        ``ndsctl json`` nests them under ``clients``. Accept both.
+        """
         result = self._runner.run(["ndsctl", "json", mac])
         if result.returncode != 0 or not result.stdout.strip():
             return None
@@ -382,12 +403,19 @@ class OpenWrtClientControlAdapter:
         if not isinstance(payload, dict):
             return None
         raw_clients = payload.get("clients")
-        if not isinstance(raw_clients, dict):
+        if isinstance(raw_clients, dict):
+            payload = raw_clients.get(mac)
+        if not isinstance(payload, dict) or payload.get("mac", mac) != mac:
             return None
-        raw_client = raw_clients.get(mac)
-        if not isinstance(raw_client, dict):
-            return None
-        raw_ip = raw_client.get("ip")
+        return payload
+
+    def _portal_client_authenticated(self, mac: str) -> bool:
+        client = self._portal_client(mac)
+        return client is not None and client.get("state") == "Authenticated"
+
+    def _portal_client_ip(self, mac: str) -> str | None:
+        client = self._portal_client(mac)
+        raw_ip = None if client is None else client.get("ip")
         if raw_ip is None:
             return None
         try:

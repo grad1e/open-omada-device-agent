@@ -50,7 +50,7 @@ dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
 | Client operations and rate limits | 🟡 Optional `ubus`/nftables adapters |
 | LED enable/disable/locate | 🟡 Optional sysfs adapter; state survives Locate and agent restarts |
 | FORGET / forget-no-reset response | ✅ Working |
-| Captive portal sessions/enforcement | 🟡 openNDS enforcement, free-policy walled garden, TP-Link External Portal redirect parameters, and client auth state are wired |
+| Captive portal sessions/enforcement | 🟡 openNDS on a routed guest network; controller built-in portal and External Portal redirects, free-policy walled garden, session length and client auth state are wired; guest logout is not |
 | Portal RADIUS authentication | 🟡 Library support; not wired to HTTP portal flow |
 | `GET_REQUEST` | 🟡 Defensive unsupported-key responses |
 | Notify families | 🟡 Defensive unsupported replies |
@@ -296,7 +296,9 @@ Validated behavior today:
 - The openNDS adapter disables `gatewayfqdn`, so captive clients are redirected
   to the gateway IP and do not need to resolve the local-only `status.client`
   hostname.
-- Omada `clientConfig.unauth` is translated into `ndsctl auth/deauth`.
+- Omada `clientConfig.unauth` and controller logins (`EVENT_PORTAL_AUTH`) are
+  translated into `ndsctl auth/deauth`. A login lasts as long as the portal's
+  Authentication Timeout.
 - When `conntrack` is installed, deauth also clears flows for the client's IP
   so previously authenticated sessions stop immediately.
 - `ndsctl json` is merged into Omada client telemetry as portal state. Only
@@ -312,6 +314,7 @@ Current limitation:
 - The agent does not host the external portal UI and does not submit
   `/hotspot/extPortal/auth` itself. The external portal configured in Omada must
   preserve the redirect query parameters and perform Controller authorization.
+- Guest logout (the controller's logout domain) is not implemented yet.
 
 ### OpenWrt deployment helper
 

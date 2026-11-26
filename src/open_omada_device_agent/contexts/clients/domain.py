@@ -31,6 +31,7 @@ class ClientOperationCode(IntEnum):
 class ClientAuthConfig:
     client_mac: str
     unauthenticated: bool | None = None
+    session_timeout_seconds: int | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)

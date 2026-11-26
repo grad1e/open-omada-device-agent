@@ -73,6 +73,13 @@ All notable project changes will be documented in this file.
 - A `SET_REQUEST` without `configVersion`/`configVersionInc` (one-off commands
   such as `rogueApScan`) keeps the current version. It used to drop the
   managed session, which then re-adopted.
+- A repeated portal login for a client openNDS already authenticated is no
+  longer reported as an error (the controller can send the login twice).
+- Portal logout clears the client's conntrack entries again: `ndsctl json
+  <mac>` prints the client at the top level, which the agent did not read.
+- Portal logins now last as long as the portal's Authentication Timeout
+  (for example 8 hours). The agent passes the login's `end - start` to
+  `ndsctl auth` instead of leaving openNDS at its 24-hour default.
 - Redirects to the controller's built-in portal page use the query names it
   reads (`cid`, `ap`, `ssid`, `rid`, `t`, `u`). The External Portal names made
   Controller 6.3.0.111 answer HTTP 400 ("Redirect device is not valid").

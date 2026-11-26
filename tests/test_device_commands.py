@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass, field
 
 from open_omada_device_agent.ap_config import parse_config_body
+from open_omada_device_agent.application.commands import ApplyDeviceConfigurationCommand
+from open_omada_device_agent.contexts.clients.domain import ClientAuthConfig
 from open_omada_device_agent.device_commands import (
     OpenWrtClientControlAdapter,
     SysfsLedAdapter,
@@ -180,6 +182,32 @@ def test_openwrt_client_control_authenticates_portal_client_with_opennds():
     assert result.changed is True
     assert runner.calls == [
         (("ndsctl", "auth", "aa:bb:cc:dd:ee:ff", "", "", "", "", "", ""), None)
+    ]
+
+
+def test_openwrt_client_control_passes_portal_session_length_to_opennds():
+    update = ApplyDeviceConfigurationCommand(
+        sequence_id=None,
+        config_version=None,
+        config_version_inc=None,
+        client_configs=(
+            ClientAuthConfig(
+                client_mac="AA-BB-CC-DD-EE-FF",
+                unauthenticated=False,
+                session_timeout_seconds=8 * 3600 + 1,
+            ),
+        ),
+    )
+    runner = RecordingRunner()
+
+    result = OpenWrtClientControlAdapter(runner).reconcile(
+        update,
+        _caps(has_opennds=True),
+    )
+
+    assert result.applied is True
+    assert runner.calls == [
+        (("ndsctl", "auth", "aa:bb:cc:dd:ee:ff", "481", "", "", "", "", ""), None)
     ]
 
 
@@ -506,3 +534,53 @@ def test_locate_stop_after_agent_restart_reads_an_on_led(tmp_path, monkeypatch):
     led.adapter().reconcile(parse_config_body({"led": {"locate": False}}), _caps())
 
     assert (led.trigger, led.brightness) == ("none", "1")
+
+
+@dataclass
+class FlatPortalClientRunner(RecordingRunner):
+    """openNDS 10.3 prints ``ndsctl json <mac>`` without a ``clients`` wrapper."""
+
+    auth_returncode: int = 0
+
+    def run(self, args, *, input_text=None):
+        command = tuple(args)
+        self.calls.append((command, input_text))
+        if command == ("ndsctl", "json", "aa:bb:cc:dd:ee:ff"):
+            return CommandResult(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "gatewayaddress": "10.77.0.1:2050",
+                        "mac": "aa:bb:cc:dd:ee:ff",
+                        "ip": "10.77.0.114",
+                        "state": "Authenticated",
+                    }
+                ),
+            )
+        if command[:2] == ("ndsctl", "auth"):
+            return CommandResult(returncode=self.auth_returncode)
+        return CommandResult(returncode=0)
+
+
+def test_openwrt_client_control_flushes_conntrack_with_flat_ndsctl_json():
+    update = parse_config_body(
+        {"clientConfig": [{"clientMac": "aa:bb:cc:dd:ee:ff", "unauth": True}]}
+    )
+    runner = FlatPortalClientRunner()
+
+    result = OpenWrtClientControlAdapter(runner).reconcile(update, _caps(has_opennds=True))
+
+    assert result.applied is True
+    assert (("conntrack", "-D", "-s", "10.77.0.114"), None) in runner.calls
+
+
+def test_openwrt_client_control_accepts_repeated_portal_login():
+    update = parse_config_body(
+        {"clientConfig": [{"clientMac": "aa:bb:cc:dd:ee:ff", "unauth": False}]}
+    )
+    runner = FlatPortalClientRunner(auth_returncode=1)
+
+    result = OpenWrtClientControlAdapter(runner).reconcile(update, _caps(has_opennds=True))
+
+    assert result.applied is True
+    assert result.changed is False
