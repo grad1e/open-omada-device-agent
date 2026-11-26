@@ -13,6 +13,11 @@ All notable project changes will be documented in this file.
   agent advertises the `rogueAp`/`rogueApInform` components when `iw` can
   scan; `OMADA_CAP_ROGUE_AP_SCAN=false` turns it off. `rogueApGlobal` and
   `rogueApSetting` are accepted without local changes.
+- Wireless Mode per radio: `wirelessBasic_*.wirelessMode` picks the htmode
+  family (b/g → `NOHT`, b/g/n and a/n → `HT`, a/n/ac → `VHT`, b/g/n/ax and
+  a/n/ac/ax → `HE`), capped at what the radio supports; 802.11n modes stop at
+  40 MHz. Auto (sent as no `wirelessMode`) uses the radio's newest standard
+  again. Each radio SET is logged with its mode, width, channel and Tx power.
 - Wireless → Advanced per radio: Maximum Associated Clients (`loadBalance_*`)
   sets UCI `maxassoc`, RSSI Threshold (`rssi_*`) sets `rssi_reject_assoc_rssi`,
   and U-APSD (`qosConfig_*`) sets `uapsd` on the agent's SSIDs (kept on the

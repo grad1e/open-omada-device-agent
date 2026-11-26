@@ -15,7 +15,7 @@ from typing import Protocol
 from .... import config
 from ....application.commands import ApplyDeviceConfigurationCommand
 from ....contexts.wireless.domain import (
-    RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork,
+    RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, WirelessNetwork,
 )
 
 from ....application.contracts import PlatformCapabilities
@@ -102,6 +102,16 @@ class OpenWrtUciAdapter:
                 error="; ".join(errors),
             )
 
+        for radio in update.radios:
+            log.info(
+                "Radio %s settings: enabled=%s wirelessMode=%s chanWidth=%s channel=%s txPower=%s",
+                radio.band.value,
+                radio.enabled,
+                radio.wireless_mode,
+                radio.channel_width,
+                radio.channel,
+                radio.tx_power,
+            )
         for advanced in update.radio_advanced:
             if advanced.ofdma is False:
                 log.info(
@@ -160,7 +170,7 @@ class OpenWrtUciAdapter:
         """Read the current UCI htmode of radios whose channel width will change."""
         htmodes: dict[str, str] = {}
         for radio in update.radios:
-            if radio.channel_width is None:
+            if radio.channel_width is None and radio.wireless_mode is None:
                 continue
             section = _radio_section(radio.band, radio.radio_id)
             result = self._runner.run(["uci", "-q", "get", f"wireless.{section}.htmode"])
@@ -294,6 +304,7 @@ def build_uci_batch(
                 radio,
                 current_htmodes.get(section),
                 advertised_channels=usable_channels(capabilities, radio.band),
+                hardware=capabilities.hardware_for(radio.band),
             )
         )
     radio_uapsd = _radio_uapsd(wireless_state)
@@ -420,6 +431,7 @@ def _radio_lines(
     current_htmode: str | None = None,
     *,
     advertised_channels: tuple[int, ...] = (),
+    hardware: RadioHardware | None = None,
 ) -> tuple[str, ...]:
     section = _radio_section(radio.band, radio.radio_id)
     lines = []
@@ -443,8 +455,8 @@ def _radio_lines(
             lines.append(_set("wireless", section, "channels", " ".join(map(str, channels))))
     elif radio.channel is not None:
         lines.append(_set("wireless", section, "channel", str(radio.channel)))
-    if radio.channel_width is not None:
-        htmode = _channel_width_mode(radio.channel_width, radio.band, current_htmode)
+    if radio.channel_width is not None or radio.wireless_mode is not None:
+        htmode = _radio_htmode(radio, current_htmode, hardware)
         if htmode is None:
             log.warning(
                 "Unknown Omada chanWidth code %s for %s; leaving htmode unchanged",
@@ -591,31 +603,75 @@ def _wlan_section(wlan: WirelessNetwork) -> str:
 # still narrows on 2.4 GHz when overlapping BSSes forbid 40 MHz.
 OMADA_CHANNEL_WIDTH_MHZ: dict[int, int] = {2: 20, 3: 40, 4: 40, 5: 80, 6: 80, 7: 160}
 
-_HTMODE_FAMILY = re.compile(r"^(EHT|HE|VHT|HT)", re.IGNORECASE)
+_HTMODE_FAMILY = re.compile(r"^(NOHT|EHT|HE|VHT|HT)", re.IGNORECASE)
+_HTMODE_MHZ = re.compile(r"(\d+)$")
+
+# Omada ``wirelessBasic_*.wirelessMode`` codes (Controller 6.3.0.111 UI enum;
+# 3, 4, 7 and 13 confirmed in the lab). "Auto" is sent as no key at all.
+# Each mode maps to the newest OpenWrt htmode family it allows.
+OMADA_WIRELESS_MODE_FAMILY: dict[int, str] = {
+    3: "NOHT",  # 802.11b/g mixed
+    4: "HT",  # 802.11b/g/n mixed
+    13: "HE",  # 802.11b/g/n/ax mixed
+    17: "EHT",  # 802.11b/g/n/ax/be mixed
+    7: "HT",  # 802.11a/n mixed
+    10: "VHT",  # 802.11a/n/ac mixed
+    16: "HE",  # 802.11a/n/ac/ax mixed
+    18: "EHT",  # 802.11a/n/ac/ax/be mixed
+}
+_FAMILY_RANK = {"NOHT": 0, "HT": 1, "VHT": 2, "HE": 3, "EHT": 4}
 
 
-def _channel_width_mode(
-    width_code: int,
-    band: RadioBand,
+def _hardware_family(band: RadioBand, hardware: RadioHardware | None) -> str | None:
+    if hardware is None:
+        return None
+    if hardware.he:
+        return "HE"
+    if hardware.vht and band is not RadioBand.TWO_G:
+        return "VHT"
+    return "HT"
+
+
+def _radio_htmode(
+    radio: RadioConfig,
     current_htmode: str | None = None,
+    hardware: RadioHardware | None = None,
 ) -> str | None:
-    """Map an Omada chanWidth code to an OpenWrt htmode.
+    """OpenWrt htmode for the radio's Omada wireless mode and channel width.
 
-    The radio's current htmode family (EHT/HE/VHT/HT) is kept so that an
-    802.11ax radio stays on HE instead of being downgraded to HT/VHT.
+    Auto mode (no ``wirelessMode``) uses the newest family the hardware
+    supports; an explicit mode is capped at it. Without hardware details the
+    radio's current family is kept, so an 802.11ax radio is not downgraded.
     """
-    mhz = OMADA_CHANNEL_WIDTH_MHZ.get(width_code)
+    if radio.channel_width is not None:
+        mhz = OMADA_CHANNEL_WIDTH_MHZ.get(radio.channel_width)
+    else:
+        match = _HTMODE_MHZ.search(current_htmode or "")
+        mhz = int(match.group(1)) if match else 20
     if mhz is None:
         return None
-    match = _HTMODE_FAMILY.match(current_htmode or "")
-    if match:
-        family = match.group(1).upper()
+    best = _hardware_family(radio.band, hardware)
+    requested = OMADA_WIRELESS_MODE_FAMILY.get(radio.wireless_mode or 0)
+    current = _HTMODE_FAMILY.match(current_htmode or "")
+    if requested is not None:
+        family = requested
+        if best is not None and _FAMILY_RANK[family] > _FAMILY_RANK[best]:
+            family = best
+    elif best is not None:
+        family = best
+    elif current and current.group(1).upper() != "NOHT":
+        family = current.group(1).upper()
     else:
-        family = "HT" if band is RadioBand.TWO_G else "VHT"
-    if family == "VHT" and band is RadioBand.TWO_G:
+        family = "HT" if radio.band is RadioBand.TWO_G else "VHT"
+    if family == "NOHT":
+        return "NOHT"
+    if family == "VHT" and radio.band is RadioBand.TWO_G:
         family = "HT"
     if family == "HT" and mhz > 40:
-        family = "VHT"
+        if requested is not None or best is not None:
+            mhz = 40  # 802.11n stops at 40 MHz
+        else:
+            family = "VHT"
     return f"{family}{mhz}"
 
 
