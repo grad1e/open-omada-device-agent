@@ -14,8 +14,9 @@ controller, so every change is guarded:
    again on the next full sync. The watchdog records it, and the agent does not
    apply that same change again until the AP reboots.
 
-The DHCP fallback address is not applied: OpenWrt has no "use this address
-when DHCP gets no lease" option.
+In DHCP mode the controller's fallback address is stored in the interface
+(``openomada_fallback``, ``openomada_fallback_gateway``) and added by
+``dhcp_fallback.DhcpFallback`` while DHCP gets no lease.
 """
 from __future__ import annotations
 
@@ -46,29 +47,43 @@ CONFIRM_TIMEOUT = 180.0
 CONFIRM_INTERVAL = 5.0
 ROLLBACK_SETTLE = 15.0  # network reload after the watchdog restores the config
 
+FALLBACK_OPTION = "openomada_fallback"
+FALLBACK_GATEWAY_OPTION = "openomada_fallback_gateway"
+
 Endpoint = Callable[[], tuple[str, int] | None]
 Connect = Callable[[str, int], bool]
 
 
-def validate_lan_setting(setting: LanIpSetting) -> str | None:
-    if setting.mode == "dhcp":
-        return None
-    if not setting.ip_address or not setting.netmask:
-        return "static IP Settings need an IP address and a netmask"
+def _address_error(kind: str, address: str | None, netmask: str | None, gateway: str | None) -> str | None:
+    if not address or not netmask:
+        return f"{kind} IP Settings need an IP address and a netmask"
     try:
-        interface = ipaddress.IPv4Interface(f"{setting.ip_address}/{setting.netmask}")
+        interface = ipaddress.IPv4Interface(f"{address}/{netmask}")
     except ValueError as exc:
-        return f"invalid static IP address or netmask: {exc}"
+        return f"invalid {kind} IP address or netmask: {exc}"
     network = interface.network
     if network.prefixlen < 31 and interface.ip in (network.network_address, network.broadcast_address):
         return f"{interface.ip} is the network or broadcast address of {network}"
-    if setting.gateway:
+    if gateway:
         try:
-            gateway = ipaddress.IPv4Address(setting.gateway)
+            gateway_ip = ipaddress.IPv4Address(gateway)
         except ValueError:
-            return f"invalid gateway {setting.gateway}"
-        if gateway not in network or gateway == interface.ip:
-            return f"gateway {gateway} is not another address in {network}"
+            return f"invalid {kind} gateway {gateway}"
+        if gateway_ip not in network or gateway_ip == interface.ip:
+            return f"{kind} gateway {gateway_ip} is not another address in {network}"
+    return None
+
+
+def validate_lan_setting(setting: LanIpSetting) -> str | None:
+    if setting.mode == "dhcp":
+        if not setting.fallback_enabled:
+            return None
+        return _address_error(
+            "fallback", setting.fallback_ip, setting.fallback_netmask, setting.fallback_gateway
+        )
+    error = _address_error("static", setting.ip_address, setting.netmask, setting.gateway)
+    if error:
+        return error
     for server in setting.dns:
         try:
             ipaddress.ip_address(server)
@@ -79,6 +94,14 @@ def validate_lan_setting(setting: LanIpSetting) -> str | None:
 
 def static_cidr(setting: LanIpSetting) -> str:
     interface = ipaddress.IPv4Interface(f"{setting.ip_address}/{setting.netmask}")
+    return f"{interface.ip}/{interface.network.prefixlen}"
+
+
+def fallback_cidr(setting: LanIpSetting) -> str | None:
+    """The DHCP fallback address as ``a.b.c.d/len``, or None when it is off."""
+    if setting.mode != "dhcp" or not setting.fallback_enabled:
+        return None
+    interface = ipaddress.IPv4Interface(f"{setting.fallback_ip}/{setting.fallback_netmask}")
     return f"{interface.ip}/{interface.network.prefixlen}"
 
 
@@ -102,7 +125,18 @@ def current_lan_setting(options: dict[str, Any]) -> LanIpSetting | None:
     proto = options.get("proto")
     dns = tuple(options.get("dns", ()))
     if proto == "dhcp":
-        return LanIpSetting(mode="dhcp", dns=dns)
+        try:
+            fallback = ipaddress.IPv4Interface(options.get(FALLBACK_OPTION) or "")
+        except ValueError:
+            return LanIpSetting(mode="dhcp", dns=dns)
+        return LanIpSetting(
+            mode="dhcp",
+            dns=dns,
+            fallback_enabled=True,
+            fallback_ip=str(fallback.ip),
+            fallback_netmask=str(fallback.netmask),
+            fallback_gateway=options.get(FALLBACK_GATEWAY_OPTION) or None,
+        )
     if proto != "static":
         return None
     raw = options.get("ipaddr")
@@ -130,15 +164,23 @@ def build_ip_batch(setting: LanIpSetting, options: dict[str, Any], interface: st
     section = f"network.{interface}"
     current = current_lan_setting(options)
     lines: list[str] = []
+    fallback = fallback_cidr(setting)
+    fallback_gateway = setting.fallback_gateway if fallback else None
     if setting.mode == "dhcp":
-        if current is not None and current.mode == "dhcp" and not any(
-            key in options for key in ("ipaddr", "netmask", "gateway")
+        if (
+            current is not None
+            and current.mode == "dhcp"
+            and not any(key in options for key in ("ipaddr", "netmask", "gateway"))
+            and options.get(FALLBACK_OPTION) == fallback
+            and options.get(FALLBACK_GATEWAY_OPTION) == fallback_gateway
         ):
             return []
         lines.append(f"set {section}.proto='dhcp'")
         for option in ("ipaddr", "netmask", "gateway", "dns"):
             if option in options:
                 lines.append(f"delete {section}.{option}")
+        lines.extend(_set_or_delete(section, FALLBACK_OPTION, fallback, options))
+        lines.extend(_set_or_delete(section, FALLBACK_GATEWAY_OPTION, fallback_gateway, options))
         return lines
 
     wanted = LanIpSetting(
@@ -148,7 +190,8 @@ def build_ip_batch(setting: LanIpSetting, options: dict[str, Any], interface: st
         gateway=setting.gateway,
         dns=setting.dns,
     )
-    if current == wanted and "netmask" not in options:
+    stale = [o for o in ("netmask", FALLBACK_OPTION, FALLBACK_GATEWAY_OPTION) if o in options]
+    if current == wanted and not stale:
         return []
     lines.append(f"set {section}.proto='static'")
     lines.append(f"set {section}.ipaddr='{static_cidr(setting)}'")
@@ -162,7 +205,16 @@ def build_ip_batch(setting: LanIpSetting, options: dict[str, Any], interface: st
         lines.append(f"delete {section}.dns")
     for server in setting.dns:
         lines.append(f"add_list {section}.dns='{server}'")
+    for option in (FALLBACK_OPTION, FALLBACK_GATEWAY_OPTION):
+        if option in options:
+            lines.append(f"delete {section}.{option}")
     return lines
+
+
+def _set_or_delete(section: str, option: str, value: str | None, options: dict[str, Any]) -> list[str]:
+    if value:
+        return [f"set {section}.{option}='{value}'"] if options.get(option) != value else []
+    return [f"delete {section}.{option}"] if option in options else []
 
 
 def lan_setting_report(setting: LanIpSetting | None) -> dict[str, Any] | None:
@@ -170,7 +222,17 @@ def lan_setting_report(setting: LanIpSetting | None) -> dict[str, Any] | None:
     if setting is None:
         return None
     if setting.mode == "dhcp":
-        return {"connType": 1, "useFallBack": False}
+        if not setting.fallback_enabled:
+            return {"connType": 1, "useFallBack": False}
+        report = {
+            "connType": 1,
+            "useFallBack": True,
+            "fallBackIp": setting.fallback_ip,
+            "fallBackMask": setting.fallback_netmask,
+        }
+        if setting.fallback_gateway:
+            report["fallbackGateway"] = setting.fallback_gateway
+        return report
     report: dict[str, Any] = {
         "connType": 0,
         "ipAddr": setting.ip_address,
@@ -241,9 +303,6 @@ class OpenWrtIpSettings:
         error = validate_lan_setting(setting)
         if error:
             return ReconciliationResult(applied=False, changed=False, error=error)
-        if setting.mode == "dhcp" and setting.fallback_enabled:
-            log.info("IP Settings fallback address is not applied on OpenWrt")
-
         shown = self._runner.run(["uci", "-q", "show", f"network.{self._interface}"])
         options = parse_interface_show(shown.stdout, self._interface)
         if not options:

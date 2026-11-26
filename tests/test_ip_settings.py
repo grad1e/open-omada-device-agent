@@ -362,3 +362,53 @@ def test_watchdog_keeps_the_copy_when_the_restore_fails(tmp_path):
 
     assert not rejected.exists()  # the agent may retry; nothing was rolled back
     assert rollback.exists()  # kept for a manual restore
+
+
+def _dhcp(**fields):
+    body = {
+        "connType": 1,
+        "useFallBack": True,
+        "fallBackIp": "192.0.2.254",
+        "fallBackMask": "255.255.255.0",
+        "fallbackGateway": "192.0.2.1",
+    }
+    body.update(fields)
+    return parse_config_body({"lanSetting": body}).lan_ip
+
+
+DHCP_FALLBACK_SHOW = DHCP_SHOW + (
+    "network.lan.openomada_fallback='192.0.2.254/24'\n"
+    "network.lan.openomada_fallback_gateway='192.0.2.1'\n"
+)
+
+
+def test_dhcp_fallback_is_stored_with_the_interface():
+    lines = build_ip_batch(_dhcp(), parse_interface_show(STATIC_SHOW, "lan"), "lan")
+    assert lines[-2:] == [
+        "set network.lan.openomada_fallback='192.0.2.254/24'",
+        "set network.lan.openomada_fallback_gateway='192.0.2.1'",
+    ]
+    stored = parse_interface_show(DHCP_FALLBACK_SHOW, "lan")
+    assert build_ip_batch(_dhcp(), stored, "lan") == []
+    assert build_ip_batch(_dhcp(useFallBack=False), stored, "lan") == [
+        "set network.lan.proto='dhcp'",
+        "delete network.lan.openomada_fallback",
+        "delete network.lan.openomada_fallback_gateway",
+    ]
+    static = build_ip_batch(_static().lan_ip, stored, "lan")
+    assert "delete network.lan.openomada_fallback" in static
+
+
+def test_dhcp_fallback_is_reported_and_validated():
+    current = current_lan_setting(parse_interface_show(DHCP_FALLBACK_SHOW, "lan"))
+    assert lan_setting_report(current) == {
+        "connType": 1,
+        "useFallBack": True,
+        "fallBackIp": "192.0.2.254",
+        "fallBackMask": "255.255.255.0",
+        "fallbackGateway": "192.0.2.1",
+    }
+    assert validate_lan_setting(_dhcp()) is None
+    assert "fallback gateway" in validate_lan_setting(_dhcp(fallbackGateway="198.51.100.1"))
+    assert "fallback" in validate_lan_setting(_dhcp(fallBackIp=""))
+    assert validate_lan_setting(_dhcp(useFallBack=False, fallBackIp="")) is None
