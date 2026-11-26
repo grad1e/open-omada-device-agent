@@ -125,6 +125,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- After an IP Settings change or a DHCP fallback switch, the controller is
+  shown the AP's new address at once instead of the old one for up to a
+  minute.
 - openNDS is no longer enabled on the LAN bridge when the AP has no default
   route (DHCP still waiting, link down). The uplink is unknown then, and
   openNDS on the uplink bridge cuts the AP off from its gateway and the

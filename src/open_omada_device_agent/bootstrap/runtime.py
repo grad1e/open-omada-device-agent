@@ -24,7 +24,7 @@ from ..adapters.outbound.openwrt.client_observations import (
     load_dnsmasq_leases,
     merge_associated_wireless_client_states,
 )
-from ..network_tools import get_device_ip
+from ..network_tools import forget_local_ip, get_device_ip
 from ..config import mac_is_random, random_mac_message
 from ..adapters.outbound.openwrt.device_profile import GenericOpenWrtAccessPointProfile
 from .settings import AgentSettings
@@ -103,14 +103,20 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         return (state.controller_host, state.manage_port) if state else None
 
     session_reset = threading.Event()
+
+    def address_changed() -> None:
+        # Report the new address in the next session, not a cached old one.
+        forget_local_ip()
+        session_reset.set()
+
     ip_settings = OpenWrtIpSettings(
         interface=settings.openwrt_lan_interface,
         controller_endpoint=controller_endpoint,
-        on_address_changed=session_reset.set,
+        on_address_changed=address_changed,
     )
     if capabilities.supports_ip_settings:
         start_dhcp_fallback(
-            DhcpFallback(interface=settings.openwrt_lan_interface, on_change=session_reset.set)
+            DhcpFallback(interface=settings.openwrt_lan_interface, on_change=address_changed)
         )
     profile = GenericOpenWrtAccessPointProfile(
         settings,
