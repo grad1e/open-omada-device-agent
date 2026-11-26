@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from open_omada_device_agent.config import (
     PLACEHOLDER_MAC,
     default_device_mac,
@@ -87,3 +89,15 @@ def test_random_mac_warning_points_to_the_label_mac():
     assert "option macaddr '<MAC>'" in message  # not the random MAC as the fix
     assert "02:aa:bb:cc:dd:01" in message  # still offered to keep the identity
     assert "re-adopt" in message
+
+
+@pytest.mark.parametrize("value", ["02-AA-BB-CC-DD-EE", "02AABBCCDDEE", " 02:aa:bb:cc:dd:ee "])
+def test_configured_mac_is_normalised(tmp_path, value):
+    mac = default_device_mac({"OMADA_DEVICE_MAC": value}, tmp_path / "none", tmp_path / "mac")
+    assert mac == "02:aa:bb:cc:dd:ee"
+
+
+@pytest.mark.parametrize("value", ["02:aa:bb:cc:dd", "not-a-mac", "00:00:00:00:00:00"])
+def test_bad_configured_mac_is_refused(tmp_path, value):
+    with pytest.raises(ValueError, match="OMADA_DEVICE_MAC"):
+        default_device_mac({"OMADA_DEVICE_MAC": value}, tmp_path / "none", tmp_path / "mac")
