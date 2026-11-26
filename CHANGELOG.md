@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- `scripts/deploy-openwrt.sh --env FILE` copies a local settings file to the AP
+  as `.env`. The script now installs `python3`, `python3-dotenv` and
+  `python3-psutil`, writes the `/usr/bin/open-omada-agent` launcher, and
+  installs and enables the boot service when it is missing, so a fresh
+  OpenWrt device needs no manual setup.
+
 - Device Config → IP Settings (opt-in with `OMADA_CAP_IP_SETTINGS=true`):
   DHCP or a static address, netmask, gateway and DNS from SET key
   `lanSetting` are written to the OpenWrt LAN interface. The change runs after
@@ -92,6 +98,11 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- `scripts/deploy-openwrt.sh` needs `--host`; the default install path is
+  `/root/open-omada-device-agent`. It checks host keys against your
+  `known_hosts` (saving a new AP's key) instead of a throwaway file that
+  skipped the check, and reuses one SSH connection, so a password is asked
+  for once.
 - The device MAC now defaults to the LAN bridge MAC (`br-lan`, or
   `OMADA_OPENWRT_LAN_BRIDGE`) instead of `02:00:00:00:00:01`. A controller
   "Use Fixed IP Address" reservation then matches the AP's DHCP requests, and
@@ -110,6 +121,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- `scripts/deploy-openwrt.sh` on a fresh OpenWrt device: openNDS started on
+  `br-lan` as soon as it was installed and cut the AP off from its network,
+  so the remaining package downloads failed. It is now installed last and
+  left switched off.
 - An SSID deleted in the controller kept broadcasting. Each `ssid_*` list in a
   SET is the band's complete SSID set, so the agent now deletes the SSIDs it
   created on that band that the list no longer has. SSIDs made by hand in

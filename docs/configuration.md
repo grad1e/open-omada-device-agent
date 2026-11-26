@@ -191,8 +191,10 @@ opkg update
 opkg install opennds dnsmasq-full conntrack
 ```
 
-`scripts/deploy-openwrt.sh` runs these installs (and adds `snmpd`) unless
-given `--no-packages`.
+`scripts/deploy-openwrt.sh` runs these installs (and adds Python and
+`snmpd`) unless given `--no-packages`. It leaves openNDS switched off
+(`enabled '0'`); the agent turns it on when the controller configures a
+portal.
 
 openNDS treats every device on the bridge it guards as a portal client,
 including the upstream router. On an AP that is not the router (a "dumb AP",
