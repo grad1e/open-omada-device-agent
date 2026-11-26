@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -41,6 +42,22 @@ _QUOTED = re.compile(r"'((?:[^']|'\\'')*)'")
 # Omada capability string: one '0'/'1' per LLDP capability, in this order.
 CAPABILITY_ORDER = ("Station", "Docsis", "Telephone", "Router", "Wlan", "Bridge", "Repeater", "Other")
 NEIGHBOUR_CACHE_SECONDS = 30.0
+LLDPCLI_TIMEOUT = 5.0  # informs wait for this; a stuck lldpd must not stall them
+
+
+def show_neighbours(timeout: float = LLDPCLI_TIMEOUT) -> str | None:
+    """``lldpcli -f json0 show neighbors`` output, or None if lldpd does not answer."""
+    try:
+        completed = subprocess.run(
+            ["lldpcli", "-f", "json0", "show", "neighbors"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return completed.stdout if completed.returncode == 0 else None
 
 
 def wired_bridge_ports(bridge: str, sys_net: Path = Path("/sys/class/net")) -> tuple[str, ...]:
@@ -154,6 +171,7 @@ class OpenWrtLldpAdapter:
         init_script: str = "/etc/init.d/lldpd",
         sys_net: Path = Path("/sys/class/net"),
         clock: Callable[[], float] = time.monotonic,
+        neighbours: Callable[[], str | None] = show_neighbours,
     ) -> None:
         self._bridge = bridge
         self._lan_port = lan_port
@@ -161,6 +179,7 @@ class OpenWrtLldpAdapter:
         self._init_script = init_script
         self._sys_net = sys_net
         self._clock = clock
+        self._neighbours = neighbours
         self._cache: tuple[float, dict[str, Any] | None] | None = None
 
     def reconcile(
@@ -197,17 +216,19 @@ class OpenWrtLldpAdapter:
         return ReconciliationResult(applied=True, changed=changed, command_count=len(batch))
 
     def inform_item(self) -> dict[str, Any] | None:
-        """Inform value for key ``lldp``; None while lldpd is not running."""
+        """Inform value for key ``lldp``; None while lldpd is not running.
+
+        Only answers are cached: right after a (re)start lldpd may not answer
+        yet, and the next inform should try again.
+        """
         now = self._clock()
         if self._cache is not None and now - self._cache[0] < NEIGHBOUR_CACHE_SECONDS:
             return self._cache[1]
-        item = None
-        try:
-            result = self._runner.run(["lldpcli", "-f", "json0", "show", "neighbors"])
-        except OSError:
-            result = None
-        if result is not None and result.returncode == 0:
-            item = {"lldps": [{"port": self._lan_port, "neighbors": parse_neighbours(result.stdout)}]}
+        output = self._neighbours()
+        if output is None:
+            self._cache = None
+            return None
+        item = {"lldps": [{"port": self._lan_port, "neighbors": parse_neighbours(output)}]}
         self._cache = (now, item)
         return item
 
@@ -218,14 +239,18 @@ class OpenWrtLldpAdapter:
         if restart or not is_enabled:
             self._runner.run([self._init_script, "restart"])
             return True
+        # Enabled but maybe not running (stopped by hand); start is a no-op
+        # for a running procd service.
+        self._runner.run([self._init_script, "start"])
         return False
 
     def _stop(self) -> bool:
-        if self._runner.run([self._init_script, "enabled"]).returncode != 0:
-            return False
+        # Stop even when not enabled at boot: lldpd may have been started by hand.
+        is_enabled = self._runner.run([self._init_script, "enabled"]).returncode == 0
         self._runner.run([self._init_script, "stop"])
-        self._runner.run([self._init_script, "disable"])
-        return True
+        if is_enabled:
+            self._runner.run([self._init_script, "disable"])
+        return is_enabled
 
 
 def _items(data: Any, key: str) -> list[Mapping[str, Any]]:

@@ -81,12 +81,10 @@ def _sys(tmp_path):
 
 
 class _Runner:
-    def __init__(self, show=DEFAULT_SHOW, enabled=True, batch_rc=0, neighbours="{}", lldpcli_rc=0):
+    def __init__(self, show=DEFAULT_SHOW, enabled=True, batch_rc=0):
         self.show = show
         self.enabled = enabled
         self.batch_rc = batch_rc
-        self.neighbours = neighbours
-        self.lldpcli_rc = lldpcli_rc
         self.calls = []
         self.batch = None
 
@@ -97,8 +95,6 @@ class _Runner:
         if args[:3] == ["uci", "-q", "batch"]:
             self.batch = input_text
             return CommandResult(self.batch_rc)
-        if args[0] == "lldpcli":
-            return CommandResult(self.lldpcli_rc, self.neighbours)
         if args[-1] == "enabled":
             return CommandResult(0 if self.enabled else 1)
         return CommandResult(0)
@@ -210,18 +206,75 @@ def test_neighbours_use_omada_fields():
 
 def test_inform_item_reports_neighbours_under_the_lan_port(tmp_path):
     now = [0.0]
-    runner = _Runner(neighbours=json.dumps(NEIGHBOURS))
-    adapter = _adapter(tmp_path, runner, clock=lambda: now[0])
+    answers = [json.dumps(NEIGHBOURS), None]
+    calls = []
+
+    def neighbours():
+        calls.append(now[0])
+        return answers[0]
+
+    adapter = OpenWrtLldpAdapter(runner=_Runner(), sys_net=_sys(tmp_path), clock=lambda: now[0],
+                                 neighbours=neighbours)
 
     item = adapter.inform_item()
     assert item["lldps"][0]["port"] == "LAN"
     assert item["lldps"][0]["neighbors"][0]["portId"] == "gi1/0/5"
 
     adapter.inform_item()
-    assert sum(call[0] == "lldpcli" for call in runner.calls) == 1  # cached
+    assert len(calls) == 1  # cached
     now[0] = 60.0
-    runner.lldpcli_rc = 1  # lldpd stopped
+    answers.pop(0)  # lldpd stopped, or not answering yet after a restart
     assert adapter.inform_item() is None
+    now[0] = 61.0
+    answers[0] = '{"lldp": [{}]}'
+    # A failed read is not cached: the next inform asks again.
+    assert adapter.inform_item() == {"lldps": [{"port": "LAN", "neighbors": []}]}
+    assert len(calls) == 3
+
+
+def test_show_neighbours_gives_up_on_a_stuck_lldpd(monkeypatch):
+    import subprocess
+
+    from open_omada_device_agent.adapters.outbound.openwrt import lldp
+
+    def stuck(*args, **kwargs):
+        assert kwargs["timeout"] == lldp.LLDPCLI_TIMEOUT
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(lldp.subprocess, "run", stuck)
+    assert lldp.show_neighbours() is None
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("lldpcli")
+
+    monkeypatch.setattr(lldp.subprocess, "run", missing)
+    assert lldp.show_neighbours() is None
+
+
+def test_enable_starts_a_stopped_lldpd_without_changes(tmp_path):
+    show = (
+        "lldpd.config=lldpd\n"
+        "lldpd.config.enable_lldp='1'\n"
+        "lldpd.config.enable_cdp='0'\n"
+        "lldpd.config.enable_fdp='0'\n"
+        "lldpd.config.enable_sonmp='0'\n"
+        "lldpd.config.enable_edp='0'\n"
+        "lldpd.config.interface='lan1' 'lan2'\n"
+    )
+    runner = _Runner(show=show, enabled=True)
+    result = _adapter(tmp_path, runner).reconcile(parse_config_body({"lldp": {"enable": 1}}), _caps())
+
+    assert result.applied and not result.changed and runner.batch is None
+    assert ["/etc/init.d/lldpd", "start"] in runner.calls
+    assert ["/etc/init.d/lldpd", "restart"] not in runner.calls
+
+
+def test_disable_stops_an_lldpd_started_by_hand(tmp_path):
+    runner = _Runner(enabled=False)
+    _adapter(tmp_path, runner).reconcile(parse_config_body({"lldp": {"enable": 0}}), _caps())
+
+    assert ["/etc/init.d/lldpd", "stop"] in runner.calls
+    assert ["/etc/init.d/lldpd", "disable"] not in runner.calls
 
 
 def test_inform_carries_lldp_only_when_given():
