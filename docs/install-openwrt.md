@@ -86,7 +86,9 @@ Useful ones:
 
 - `OMADA_CAP_IP_SETTINGS=true`: let the controller change the AP's IP
   settings (Device Config → IP Settings). Changes roll back after 3 minutes if
-  the AP cannot reach the controller from the new address.
+  the AP cannot reach the controller from the new address. A rollback
+  restores all of `/etc/config/network`, so avoid other network changes on
+  the AP during those 3 minutes.
 - `OMADA_LED_BRIGHTNESS_PATH` / `OMADA_LED_TRIGGER_PATH`: the LED used for
   Locate, e.g. `/sys/class/leds/<name>/brightness` (`ls /sys/class/leds`).
 

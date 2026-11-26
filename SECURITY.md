@@ -38,7 +38,9 @@ cut the AP off from the controller if they are wrong:
 
 - **IP Settings** (`OMADA_CAP_IP_SETTINGS`, off by default) rewrites the LAN
   address. A changed address is rolled back after 3 minutes unless the agent
-  reaches the controller from it.
+  reaches the controller from it. The rollback restores the whole
+  `/etc/config/network` file, so other network changes made on the AP in
+  those 3 minutes are undone too.
 - **Captive portal** (openNDS) intercepts traffic on its bridge. The agent
   refuses to run it on the bridge that carries the uplink; use a routed guest
   network (see [docs/captive-portal.md](docs/captive-portal.md)).
