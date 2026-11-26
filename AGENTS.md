@@ -95,3 +95,33 @@ Tests do not cover the controller. For behavior changes, check on a lab
 controller and AP: deploy, watch for `INFORM_RESPONSE` in the agent log, look
 for `ERROR`/`Exception` in the controller's `server.log`, and confirm the
 effect on the AP (`uci`, `iw`, `ip`). Never test on a production controller.
+
+## Long tasks and handoffs
+
+Agent sessions get compacted or restarted in the middle of a task. Work so
+that nothing is lost when that happens:
+
+1. **Keep a handoff note** outside the repository (your agent's memory or
+   a local notes file, never a committed file). Keep it short: the task, the
+   branch and PR, what you found so far, and the next step. Update it in
+   place; don't append a growing log.
+2. **Write findings down as you find them.** During research or a
+   multi-step change, add each finding and the next step to the note right
+   away, not at the end.
+3. **After a reset, re-check before continuing:** read the note, then
+   `git status`, the current branch, `git log --oneline develop..HEAD`, the
+   PR's state, and whether the test access point still reports to the
+   controller. Say where things stand before you carry on.
+
+### Delegating to sub-agents
+
+- Hand read-heavy work to a separate agent: searching a large codebase,
+  reading protocol captures or package docs, and reviewing a pull request
+  with fresh eyes. It keeps the main session's context small.
+- Give it a self-contained brief: what is known, the exact questions, where
+  to look, and that it must only read.
+- Check the findings you build on yourself before using them; a sub-agent's
+  mistakes read as confidently as its facts.
+- Keep changes to the lab (deploys, network changes, controller settings)
+  and anything needing a sign-in in the main session, where the person you
+  work with can see them.
