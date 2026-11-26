@@ -226,9 +226,10 @@ def test_reconcile_runs_uci_batch_and_wifi_reload_without_shell():
 
     assert result.applied is True
     assert result.changed is True
-    assert runner.calls[0][0] == ("uci", "-q", "batch")
-    assert runner.calls[0][1] is not None
-    assert runner.calls[1] == (("wifi", "reload"), None)
+    calls = _without_state_reads(runner.calls)
+    assert calls[0][0] == ("uci", "-q", "batch")
+    assert calls[0][1] is not None
+    assert calls[1] == (("wifi", "reload"), None)
 
 
 def test_reconcile_applies_first_ssid_and_logs_capacity_warning(caplog):
@@ -252,7 +253,8 @@ def test_reconcile_applies_first_ssid_and_logs_capacity_warning(caplog):
     assert result.changed is True
     assert result.error == ""
     assert "controller requested 2 SSIDs" in caplog.text
-    batch = runner.calls[0][1] or ""
+    calls = _without_state_reads(runner.calls)
+    batch = calls[0][1] or ""
     assert "set wireless.default_radio0.disabled='1'" in batch
     assert "set wireless.openomada_2g_1.ssid='guest'" in batch
     assert "delete wireless.openomada_2g_2" in batch
@@ -340,8 +342,9 @@ def test_reconcile_allows_portal_wlan_when_capability_is_enabled():
 
     assert result.applied is True
     assert result.changed is True
-    assert runner.calls[0][0] == ("uci", "-q", "batch")
-    assert "set wireless.openomada_2g_guest.ssid='guest'" in (runner.calls[0][1] or "")
+    calls = _without_state_reads(runner.calls)
+    assert calls[0][0] == ("uci", "-q", "batch")
+    assert "set wireless.openomada_2g_guest.ssid='guest'" in (calls[0][1] or "")
 
 
 def test_reconcile_rejects_wpa3_psk_when_capability_is_disabled():
@@ -409,3 +412,8 @@ def test_wlan_section_records_the_controller_ssid_id_for_inform_stats():
     batch = build_uci_batch(update, _caps())
 
     assert "set wireless.openomada_5g_1.openomada_ssid_id='180126366'" in batch
+
+
+def _without_state_reads(calls):
+    """Drop the ``uci show wireless`` read that precedes SSID/radio batches."""
+    return [call for call in calls if call[0][:3] != ("uci", "-q", "show")]

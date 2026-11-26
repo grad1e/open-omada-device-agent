@@ -251,7 +251,7 @@ def test_parse_initial_controller_defaults_as_passive_config():
     )
 
 
-def test_parse_scheduler_and_wireless_advanced_as_passive_config():
+def test_parse_scheduler_as_passive_and_wireless_advanced_as_radio_advanced():
     update = parse_config_body(
         {
             "schedulerAssoc": [{"id": 1, "profileId": 2}],
@@ -260,7 +260,10 @@ def test_parse_scheduler_and_wireless_advanced_as_passive_config():
     )
 
     assert update.unhandled_keys == ()
-    assert update.passive_keys == ("schedulerAssoc", "wirelessAdv_2G")
+    assert update.passive_keys == ("schedulerAssoc",)
+    assert len(update.radio_advanced) == 1
+    assert update.radio_advanced[0].radio_id == 0
+    assert update.radio_advanced[0].ofdma is None
 
 
 def test_validate_ssid_rejects_names_over_32_bytes():

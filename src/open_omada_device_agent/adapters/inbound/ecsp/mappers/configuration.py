@@ -12,7 +12,8 @@ from .....contexts.device.domain import LedConfig, WifiControlLedConfig
 from .....contexts.networking.domain import ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
-    CaptivePortalIntent, RadioBand, RadioConfig, WirelessDhcpOption82Intent,
+    CaptivePortalIntent, ClientLimit, RadioAdvancedConfig, RadioBand, RadioConfig,
+    WirelessDhcpOption82Intent,
     WirelessNetwork, WirelessSecurity, WirelessVlanIntent, validate_ssid_name,
 )
 from .....shared.domain import SecretValue
@@ -24,6 +25,19 @@ RADIO_KEYS: dict[str, RadioBand] = {
     "wirelessBasic_5G": RadioBand.FIVE_G,
     "wirelessBasic_5G2": RadioBand.FIVE_G2,
     "wirelessBasic_6G": RadioBand.SIX_G,
+}
+
+BAND_SUFFIXES: dict[str, RadioBand] = {
+    "2G": RadioBand.TWO_G,
+    "5G": RadioBand.FIVE_G,
+    "5G2": RadioBand.FIVE_G2,
+    "6G": RadioBand.SIX_G,
+}
+# Per-radio Advanced settings (Controller 6.3.0.111 components lb, rssiFilter,
+# qos and wlanAdv): Maximum Associated Clients, RSSI Threshold, U-APSD, OFDMA.
+RADIO_ADVANCED_PREFIXES = ("loadBalance_", "rssi_", "qosConfig_", "wirelessAdv_")
+RADIO_ADVANCED_KEYS = {
+    f"{prefix}{suffix}" for prefix in RADIO_ADVANCED_PREFIXES for suffix in BAND_SUFFIXES
 }
 
 SSID_KEYS: dict[str, RadioBand] = {
@@ -62,15 +76,11 @@ PASSIVE_CONFIG_KEYS = {
     "rogueApGlobal",
     "rogueApSetting",
     "schedulerAssoc",
-    "wirelessAdv_2G",
-    "wirelessAdv_5G",
-    "wirelessAdv_5G2",
-    "wirelessAdv_6G",
 }
 
 ACK_ONLY_CONFIG_KEYS: set[str] = set()
 
-KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | PASSIVE_CONFIG_KEYS | {
+KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PASSIVE_CONFIG_KEYS | {
     "clientConfig",
     "clientOperation",
     "clientOperation_cmd",
@@ -104,6 +114,8 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         raw = body.get(key)
         if raw is not None:
             wlans.extend(_parse_ssid_config(band, raw))
+
+    radio_advanced = _parse_radio_advanced(body)
 
     management_vlan = None
     raw_management_vlan = body.get("managementVlan")
@@ -170,6 +182,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         client_operations=tuple(client_operations),
         client_rate_config=client_rate_config,
         rogue_ap_scan=body.get("rogueApScan") is not None,
+        radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
         unhandled_keys=unhandled,
@@ -286,6 +299,44 @@ def _parse_dhcp_option82(raw: Any) -> WirelessDhcpOption82Intent | None:
         site_name=_optional_str(data.get("siteName")),
         raw=dict(data),
     )
+
+
+def _parse_radio_advanced(body: Mapping[str, Any]) -> tuple[RadioAdvancedConfig, ...]:
+    configs: list[RadioAdvancedConfig] = []
+    for suffix, band in BAND_SUFFIXES.items():
+        raw = {prefix: body.get(f"{prefix}{suffix}") for prefix in RADIO_ADVANCED_PREFIXES}
+        if all(value is None for value in raw.values()):
+            continue
+        load_balance = _optional_mapping(raw["loadBalance_"]) or {}
+        rssi = _optional_mapping(raw["rssi_"]) or {}
+        qos = _optional_mapping(raw["qosConfig_"]) or {}
+        advanced = _optional_mapping(raw["wirelessAdv_"]) or {}
+        radio_id = next(
+            (
+                _optional_int(section.get("radioId"))
+                for section in (load_balance, qos, advanced)
+                if section.get("radioId") is not None
+            ),
+            None,
+        )
+        configs.append(
+            RadioAdvancedConfig(
+                band=band,
+                radio_id=radio_id,
+                max_clients=_client_limit(load_balance, "maxAssocClient"),
+                rssi_threshold=_client_limit(rssi, "threshold"),
+                uapsd=_optional_bool(qos.get("uapsdEnable")),
+                ofdma=_optional_bool(advanced.get("ofdma")),
+            )
+        )
+    return tuple(configs)
+
+
+def _client_limit(data: Mapping[str, Any], value_key: str) -> ClientLimit | None:
+    if "enable" not in data:
+        return None
+    enabled = bool(_optional_bool(data.get("enable")))
+    return ClientLimit(enabled=enabled, value=_optional_int(data.get(value_key)))
 
 
 def _parse_management_vlan(raw: Any) -> ManagementVlan:

@@ -56,6 +56,12 @@ def ap_components_v2(
         components["mVlan"] = "1.0"
     if capabilities.supports_client_rate_limits:
         components["clientRateLimit"] = "1.0"
+    if capabilities.supports_wlan_config:
+        # EAP650 versions in Controller 6.3.0.111: per-radio Maximum Associated
+        # Clients (lb), RSSI Threshold (rssiFilter), U-APSD (qos), OFDMA (wlanAdv).
+        components.update(
+            {"lb": "1.0", "rssiFilter": "1.0", "qos": "1.0", "wlanAdv": "1.1"}
+        )
     if capabilities.supports_rogue_ap_scan:
         # Controller 6.3.0.111 model templates list rogueAp=3.0 and
         # rogueApInform=2.0 for the EAP650; results travel in ``rogueApList``.

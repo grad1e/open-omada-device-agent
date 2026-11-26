@@ -6,7 +6,7 @@ from ..contexts.clients.domain import ClientAuthConfig, ClientControlOperation, 
 from ..contexts.device.domain import LedConfig, WifiControlLedConfig
 from ..contexts.networking.domain import ManagementVlan
 from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
-from ..contexts.wireless.domain import RadioConfig, WirelessNetwork
+from ..contexts.wireless.domain import RadioAdvancedConfig, RadioConfig, WirelessNetwork
 
 @dataclass(frozen=True)
 class ApplyDeviceConfigurationCommand:
@@ -24,6 +24,7 @@ class ApplyDeviceConfigurationCommand:
     client_operations: tuple[ClientControlOperation, ...] = ()
     client_rate_config: ClientRateConfig | None = None
     rogue_ap_scan: bool = False
+    radio_advanced: tuple[RadioAdvancedConfig, ...] = ()
     passive_keys: tuple[str, ...] = ()
     ack_only_keys: tuple[str, ...] = ()
     unhandled_keys: tuple[str, ...] = ()

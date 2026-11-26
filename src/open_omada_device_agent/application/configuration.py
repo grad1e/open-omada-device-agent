@@ -40,7 +40,7 @@ class ApplyDeviceConfiguration:
                 "Preserving passive AP config domains without local OpenWrt changes: %s",
                 ",".join(update.passive_keys),
             )
-        has_platform = bool(update.radios or update.wlans or update.management_vlan is not None or update.portal_free_policy is not None)
+        has_platform = bool(update.radios or update.radio_advanced or update.wlans or update.management_vlan is not None or update.portal_free_policy is not None)
         has_commands = bool(update.led is not None or update.wifi_control_led is not None or update.client_configs or update.client_operations or update.client_rate_config is not None or update.rogue_ap_scan)
         changed = False
         capabilities = self._detect()

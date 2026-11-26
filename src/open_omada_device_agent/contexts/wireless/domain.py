@@ -67,6 +67,26 @@ class RadioConfig:
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
+class ClientLimit:
+    """An Omada per-radio limit that can be switched off (``enable``)."""
+    enabled: bool
+    value: int | None = None
+
+@dataclass(frozen=True)
+class RadioAdvancedConfig:
+    """Per-radio Advanced settings; ``None`` means "not in this SET"."""
+    band: RadioBand
+    radio_id: int | None = None
+    # Maximum Associated Clients (SET ``loadBalance_*``).
+    max_clients: ClientLimit | None = None
+    # RSSI Threshold in dBm (SET ``rssi_*``).
+    rssi_threshold: ClientLimit | None = None
+    # Unscheduled Automatic Power Save Delivery (SET ``qosConfig_*``).
+    uapsd: bool | None = None
+    # OFDMA (SET ``wirelessAdv_*``); OpenWrt has no switch for it.
+    ofdma: bool | None = None
+
+@dataclass(frozen=True)
 class WirelessSecurity:
     security_mode: int | None = None
     auth_type: int | None = None

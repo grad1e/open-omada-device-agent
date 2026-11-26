@@ -14,12 +14,23 @@ from typing import Protocol
 
 from .... import config
 from ....application.commands import ApplyDeviceConfigurationCommand
-from ....contexts.wireless.domain import RadioBand, RadioConfig, WirelessNetwork
+from ....contexts.wireless.domain import (
+    RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork,
+)
 
 from ....application.contracts import PlatformCapabilities
 
 
 log = logging.getLogger("open_omada.openwrt.uci")
+
+# wifi-device option that keeps the controller's U-APSD choice for a radio.
+# SSID sections are rebuilt on every SSID change, so ``uapsd`` is re-applied
+# to them from here.
+UAPSD_RADIO_OPTION = "openomada_uapsd"
+# Omada RSSI Threshold range (dBm) accepted for hostapd rssi_reject_assoc_rssi.
+RSSI_THRESHOLD_RANGE = range(-100, 0)
+
+WirelessState = Mapping[str, Mapping[str, str]]
 
 
 class CommandRunner(Protocol):
@@ -91,12 +102,20 @@ class OpenWrtUciAdapter:
                 error="; ".join(errors),
             )
 
+        for advanced in update.radio_advanced:
+            if advanced.ofdma is False:
+                log.info(
+                    "OFDMA off requested for %s; OpenWrt has no switch for it, "
+                    "the driver keeps OFDMA on for Wi-Fi 6",
+                    advanced.band.value,
+                )
         batch = build_uci_batch(
             update,
             capabilities,
             management_vlan_interface=self._management_vlan_interface,
             management_vlan_device=self._management_vlan_device,
             current_htmodes=self._current_htmodes(update),
+            wireless_state=self._wireless_state(update),
         )
         if not batch:
             return ReconciliationResult(
@@ -127,6 +146,15 @@ class OpenWrtUciAdapter:
             changed=True,
             command_count=len(batch),
         )
+
+    def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
+        """Read ``wireless`` sections when Advanced radio settings are involved."""
+        if not (update.radio_advanced or update.wlans):
+            return {}
+        result = self._runner.run(["uci", "-q", "show", "wireless"])
+        if result.returncode != 0:
+            return {}
+        return parse_uci_show(result.stdout)
 
     def _current_htmodes(self, update: ApplyDeviceConfigurationCommand) -> dict[str, str]:
         """Read the current UCI htmode of radios whose channel width will change."""
@@ -191,6 +219,17 @@ def validate_update(
             or wlan.security.radius_mac_auth is not None
         ) and not capabilities.supports_radius:
             errors.append("RADIUS WLAN requested but RADIUS capability is disabled")
+    if update.radio_advanced and not capabilities.supports_wlan_config:
+        errors.append("platform does not support WLAN configuration")
+    for advanced in update.radio_advanced:
+        if advanced.band not in capabilities.radio_bands:
+            errors.append(f"radio band {advanced.band.value} is not supported")
+        limit = advanced.max_clients
+        if limit is not None and limit.enabled and (limit.value is None or limit.value < 1):
+            errors.append(f"Maximum Associated Clients for {advanced.band.value} needs a value of 1 or more")
+        rssi = advanced.rssi_threshold
+        if rssi is not None and rssi.enabled and rssi.value not in RSSI_THRESHOLD_RANGE:
+            errors.append(f"RSSI Threshold for {advanced.band.value} must be -100 to -1 dBm")
     if (
         update.management_vlan is not None
         and update.management_vlan.enabled
@@ -220,9 +259,11 @@ def build_uci_batch(
     management_vlan_interface: str | None = None,
     management_vlan_device: str | None = None,
     current_htmodes: Mapping[str, str] | None = None,
+    wireless_state: WirelessState | None = None,
 ) -> tuple[str, ...]:
     lines: list[str] = []
     current_htmodes = current_htmodes or {}
+    wireless_state = wireless_state or {}
     network_lines: list[str] = []
     active_wlans = _active_wlans(update, capabilities)
     omitted_wlans = tuple(update.wlans[len(active_wlans):])
@@ -255,15 +296,95 @@ def build_uci_batch(
                 advertised_channels=usable_channels(capabilities, radio.band),
             )
         )
+    radio_uapsd = _radio_uapsd(wireless_state)
+    rebuilt = {_wlan_section(wlan) for wlan in active_wlans}
+    for advanced in update.radio_advanced:
+        section = _radio_section(advanced.band, advanced.radio_id)
+        if advanced.uapsd is not None:
+            radio_uapsd[section] = advanced.uapsd
+        lines.extend(_radio_advanced_lines(advanced, section, wireless_state, skip=rebuilt))
     for section in _default_sections(active_wlans):
         lines.append(_set("wireless", section, "disabled", "1"))
     for wlan in omitted_wlans:
         lines.append(f"delete wireless.{_wlan_section(wlan)}")
     for wlan in active_wlans:
         lines.extend(_wlan_lines(wlan, capabilities))
+        uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
+        if uapsd is not None:
+            lines.append(_set("wireless", _wlan_section(wlan), "uapsd", "1" if uapsd else "0"))
     if lines:
         lines.append("commit wireless")
     return tuple(lines)
+
+
+def _radio_advanced_lines(
+    advanced: RadioAdvancedConfig,
+    section: str,
+    wireless_state: WirelessState,
+    *,
+    skip: set[str],
+) -> tuple[str, ...]:
+    """UCI lines for Maximum Associated Clients, RSSI Threshold and U-APSD."""
+    lines: list[str] = []
+    current = wireless_state.get(section, {})
+    limits = (
+        # Radio-wide client limit (hostapd iface_max_num_sta).
+        ("maxassoc", advanced.max_clients),
+        # Refuse association below this signal (hostapd rssi_reject_assoc_rssi).
+        ("rssi_reject_assoc_rssi", advanced.rssi_threshold),
+    )
+    for option, limit in limits:
+        if limit is None:
+            continue
+        if limit.enabled and limit.value is not None:
+            lines.append(_set("wireless", section, option, str(limit.value)))
+        elif option in current:
+            lines.append(f"delete wireless.{section}.{option}")
+    if advanced.uapsd is not None:
+        value = "1" if advanced.uapsd else "0"
+        lines.append(_set("wireless", section, UAPSD_RADIO_OPTION, value))
+        for iface in _managed_ifaces(wireless_state, section):
+            if iface not in skip:
+                lines.append(_set("wireless", iface, "uapsd", value))
+    return tuple(lines)
+
+
+def _radio_uapsd(wireless_state: WirelessState) -> dict[str, bool]:
+    return {
+        name: options[UAPSD_RADIO_OPTION] == "1"
+        for name, options in wireless_state.items()
+        if options.get(".type") == "wifi-device" and UAPSD_RADIO_OPTION in options
+    }
+
+
+def _managed_ifaces(wireless_state: WirelessState, device: str) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name, options in wireless_state.items()
+        if options.get(".type") == "wifi-iface"
+        and options.get("device") == device
+        and options.get("openomada_managed") == "1"
+    )
+
+
+_UCI_SHOW_LINE = re.compile(r"^wireless\.([^.=]+)(?:\.([^=]+))?=(.*)$")
+
+
+def parse_uci_show(text: str) -> dict[str, dict[str, str]]:
+    """Parse ``uci show wireless`` into {section: {".type": ..., option: value}}."""
+    sections: dict[str, dict[str, str]] = {}
+    for line in text.splitlines():
+        match = _UCI_SHOW_LINE.match(line.strip())
+        if match is None:
+            continue
+        name, option, value = match.groups()
+        value = value.strip("'")
+        section = sections.setdefault(name, {})
+        if option is None:
+            section[".type"] = value
+        else:
+            section[option] = value
+    return sections
 
 
 def _capacity_warning(

@@ -13,6 +13,13 @@ All notable project changes will be documented in this file.
   agent advertises the `rogueAp`/`rogueApInform` components when `iw` can
   scan; `OMADA_CAP_ROGUE_AP_SCAN=false` turns it off. `rogueApGlobal` and
   `rogueApSetting` are accepted without local changes.
+- Wireless → Advanced per radio: Maximum Associated Clients (`loadBalance_*`)
+  sets UCI `maxassoc`, RSSI Threshold (`rssi_*`) sets `rssi_reject_assoc_rssi`,
+  and U-APSD (`qosConfig_*`) sets `uapsd` on the agent's SSIDs (kept on the
+  radio as `openomada_uapsd` so rebuilt SSIDs keep it). Turning a limit off
+  removes the option. The agent advertises `lb`, `rssiFilter`, `qos` and
+  `wlanAdv` with WLAN support. OFDMA (`wirelessAdv_*`) is accepted but not
+  applied: OpenWrt has no switch for it.
 - Adoption sends `devCap` with antenna count (`mimo2G`/`mimo5G`), supported
   wireless modes and OFDMA bands, using the bitmask values of real EAPs of the
   same Wi-Fi generation.
