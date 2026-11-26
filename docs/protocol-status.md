@@ -10,16 +10,16 @@ identifiers.
 | Pre-connect | ✅ | First adoption and `rebuild=1` managed reconnect |
 | Device verification | ✅ | Legacy V2 `cipherType=5` branch |
 | System verification | ✅ | Mutual auth checked before success |
-| Device negotiation | ✅ | Conservative AP component map |
+| Device negotiation | ✅ | Conservative AP component map. `devCap` (mimo, supportRadioMode, supportOFDMA), `radioCap` (mimo, ofdma, mcsLevel) and `channelInfo` (channels, width/band/DFS flags, max power) are built from `iw list` and `iw reg get`; values follow real EAPs of the same Wi-Fi generation (Observed: EAP650 adopt data; Validated: lab adoption as EAP683 UR on Controller 6.3.0.111) |
 | System negotiation | ✅ | Config/version metadata consumed |
 | Initial sync result | ✅ | ACK validated |
-| Inform | 🟡 | Device, wired LAN, active hostapd clients enriched with DHCP/openNDS metadata, portal auth clients, hostapd station metrics, OpenWrt `wSettings_*`, `ssidStats_*`, and aggregate `radioTraffic_*` when `ubus` is available |
+| Inform | 🟡 | `upTime` as `"<days> days HH:MM:SS"` and `lanInfo.rate` as an integer string (Validated: lab, no controller errors); clients without `rssi` are left out until hostapd reports one. Device, wired LAN, active hostapd clients enriched with DHCP/openNDS metadata, portal auth clients, hostapd station metrics, OpenWrt `wSettings_*`, `ssidStats_*`, and aggregate `radioTraffic_*` when `ubus` is available |
 | SET | 🟡 | Envelope/version ACKs plus parsed AP domains; unsupported keys return local error instead of fake success; common controller defaults such as `ssh`, `snmp`, `lldp`, `ipGroup`, `ipv6Group`, `lanSetting`, `logSetting`, and scheduler/mac-filter globals are accepted as passive when they do not require OpenWrt changes |
-| WLAN/radio config | 🟡 | OpenWrt UCI adapter for basic radios and PSK SSIDs |
+| WLAN/radio config | 🟡 | OpenWrt UCI adapter for basic radios and PSK SSIDs. `chanWidth` enum codes map to `htmode` (Observed: 2=20, 3=40, 4=20/40, 5=80, 6=20/40/80, 7=160 MHz); Auto channel uses ACS limited to `channelRange` and usable channels; `OMADA_WIFI_COUNTRY` sets the country (the controller sends none) |
 | SSID VLAN config | 🟡 | Opt-in UCI network interface mapping; dynamic VLAN/Option82 remain rejected unless implemented |
 | Management VLAN config | 🟡 | Opt-in UCI device remapping via explicit local target variables |
 | Client operations | 🟡 | Reconnect/deauth through hostapd `ubus`; block/unblock and rate-limits through nftables bridge policy |
-| LED config | 🟡 | Optional sysfs brightness adapter for `led.enable`; optional trigger adapter for `led.locate`; `wifiControlLed` remains rejected |
+| LED config | 🟡 | Optional sysfs brightness adapter for `led.enable`; optional trigger adapter for `led.locate`, written in the order Linux LED rules need so the LED keeps its On/Off state after Locate (Validated: lab, Controller 6.3.0.111); `wifiControlLed` remains rejected |
 | FORGET | ✅ | `FORGET_REQUEST` and no-reset variant are ACKed and clear local reconnect state |
 | GET | 🟡 | Handler replies with correlated `GET_RESPONSE` and unsupported-key metadata |
 | NOTIFY | 🟡 | Handler replies to v1/v2 notify requests unless `nre=1`; payload-specific handlers are not implemented |
@@ -27,8 +27,8 @@ identifiers.
 | Upgrade | 🚧 | Not implemented |
 | File transfer | 🚧 | Not implemented |
 | Remote terminal | 🚧 | Not implemented |
-| Radio telemetry | 🟡 | Basic OpenWrt wireless settings from `ubus`; aggregate `radioTraffic_*` from hostapd bytes/packet counters where available |
-| SSID telemetry | 🟡 | OpenWrt SSID/client counts, BSSID in Omada MAC format, optional interface counters, and hostapd traffic counters |
+| Radio telemetry | 🟡 | `wSettings_*` with the operating `ch`/`bw` from `iw dev <if> info`, `rdMode` (e.g. `a/n/ac/ax mixed`), `txPower` as `"<n>dBm"`, and `busyUti`/`txUti`/`rxUti`/`interUti` from `iw survey dump` between informs (Validated: lab UI shows mode/channel/width); aggregate `radioTraffic_*` from hostapd bytes/packet counters where available |
+| SSID telemetry | 🟡 | `ssidStats_*.id` is the controller SSID id (uci `openomada_ssid_id`), `-1` for SSIDs it does not manage (Validated: lab); OpenWrt SSID/client counts, BSSID in Omada MAC format, optional interface counters, and hostapd traffic counters |
 | Client telemetry | 🟡 | Active hostapd station RSSI/SNR/rate/traffic enriched with DHCP IP/hostname and openNDS portal state; stale DHCP/openNDS-only clients are filtered out |
 | Captive portal | 🟡 | openNDS enforcement, free-policy walled garden, TP-Link EAP External Portal query redirects, `clientConfig.unauth`, and client-state reporting are available on OpenWrt; hosted portal UI and Controller `/hotspot/extPortal/auth` submission are external to the agent |
 | Mesh | 🚧 | Not implemented |

@@ -6,9 +6,20 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Adoption sends `devCap` with antenna count (`mimo2G`/`mimo5G`), supported
+  wireless modes and OFDMA bands, using the bitmask values of real EAPs of the
+  same Wi-Fi generation.
+- DFS channels and 160 MHz widths are advertised to the controller when
+  `iw reg get` reports a DFS region (FCC, ETSI or JP). Under `DFS-UNSET`
+  (for example country IN in wireless-regdb) they stay hidden, because
+  hostapd cannot run radar detection and would disable the radio.
 - OpenWrt procd service (`scripts/openwrt/open-omada-agent.init`) to start
-  the agent at boot and restart it after a crash. `scripts/deploy-openwrt.sh`
-  restarts that service when it is enabled.
+  the agent at boot and restart it after a crash. Output goes to the system
+  log (`logread -e open_omada`, tagged `open-omada-agent`), not a file in
+  `/tmp` (RAM on OpenWrt). `scripts/deploy-openwrt.sh` restarts that service
+  when it is enabled.
+- `--workdir DIR` changes to DIR before the agent loads `.env` and its managed
+  state file; the procd service uses it to start the agent directly.
 - AP `SET_REQUEST` domain parsing for radios, SSIDs, VLAN, portal policy, LED,
   and Wi-Fi control LED keys.
 - OpenWrt UCI reconciliation for supported radio/SSID/PSK and opt-in SSID VLAN
@@ -25,20 +36,78 @@ All notable project changes will be documented in this file.
 ### Changed
 
 - `OMADA_DEVICE_IP` defaults to `local`: the agent advertises the address it
-  uses to reach the controller (a UDP route lookup that sends no packet),
-  re-evaluated every inform. Previously `0.0.0.0` was shown unless the address
+  uses to reach the controller (a UDP route lookup that sends no packet,
+  IPv4 or IPv6), re-checked every 60 s. Previously `0.0.0.0` was shown unless the address
   was set by hand. Fixed addresses and `auto` (public lookup) still work.
 - Unsupported AP `SET_REQUEST` keys now return a local config error instead of
   being silently acknowledged.
 
 ### Fixed
 
+- `--once` exits after one discovery/adoption cycle again; the Forget
+  recovery loop kept restarting discovery.
+- After an agent restart, stopping Locate no longer turns the LED off: the
+  On/Off state is read back from sysfs when no SET has set it yet.
+- Channel lists carry the band bits every real EAP sends: 2.4 GHz `0xe0`
+  (CCK, OFDM, 2 GHz), 5 GHz `0x140` (OFDM, 5 GHz), 6 GHz `0x300`. They match
+  the Qualcomm/net80211 channel flags and are identical across all EAP model
+  templates in Controller 6.3.0.111, Wi-Fi 4 to Wi-Fi 7.
+- The LED stays on after Locate stops. Restoring the `none` trigger turned
+  the LED off (Linux resets brightness), so the last On/Off setting is now
+  written after the trigger, and before it when Locate starts.
+- `wSettings_*` report the channel and width the radio runs on (from
+  `iw dev <if> info`, e.g. `"6"`/`"20MHz"`) instead of `"0"` for Auto and the
+  configured htmode, plus `rdMode` such as `"a/n/ac/ax mixed"`. The controller
+  showed Channel 0 and Mode "802.11undefined".
+- Clients without a signal reading are left out of the inform until hostapd
+  reports one (a moment after they re-associate). Controller 6.3.0.111 client
+  insights threw `NullPointerException` on a client without `rssi`.
+- Inform stats carry the fields Controller 6.3.0.111 unboxes: `ssidStats_*.id`
+  (the controller's SSID id, stored as uci `openomada_ssid_id`; `-1` for SSIDs
+  it does not manage) and `wSettings_*` `busyUti`/`txUti`/`rxUti`/`interUti`
+  from `iw survey dump`. Missing values threw `NullPointerException` in the
+  controller's SSID statistics and AP health checks on every inform.
+- `deviceInfo.upTime` is sent as `"<days> days HH:MM:SS"`. Bare seconds made
+  Controller 6.3.0.111 throw `NoSuchElementException` in its stats parser on
+  every inform.
+- `controllerSetting` (portal logout domain, sent after every Site Settings
+  save) is accepted as passive config instead of failing the `SET_REQUEST`.
+- Auto channel lists keep only channels the radio can use now. A controller
+  `channelRange`, or a `wireless.radioX.channels` list left over from another
+  country or DFS state, could make ACS pick a radar channel that hostapd
+  refuses, disabling the radio. Startup now prunes stale lists as well.
+- After changing the Wi-Fi country at startup, the agent waits for the
+  kernel to apply it before reading radio capabilities; it used to advertise
+  the previous country's channels until the next restart.
 - `--no-adopt` now exits after the first `PRE_ADOPT_REQUEST`, as its help text
   says, instead of continuing discovery forever.
 - `wSettings_*.txPower` is reported as `"<n>dBm"`; a bare number made
   Controller 6.2/6.3 drop every inform and show the AP as "Heartbeat Missed".
-- Omada `chanWidth` enum codes (2=20, 3=40, 5=80, 6=160 MHz) are mapped to
+- Omada `chanWidth` enum codes (2=20, 3=40, 5=80, 7=160 MHz; Auto 4=20/40 and 6=20/40/80) are mapped to
   OpenWrt `htmode`, keeping the radio's HE/VHT/HT family instead of forcing HT20.
+- `lanInfo.rate` is reported as an integer string (`"100"`, not `"100.0"`);
+  the controller topology service crashed parsing it, showing
+  "Something went wrong" when saving device settings.
+- Radio capabilities (Wi-Fi 5/6 support, spatial streams, 40/80 MHz channel
+  flags) are read from `iw list` instead of being hardcoded as 802.11n 1x1, so
+  the controller offers 80 MHz on capable radios. Falls back to the previous
+  static profile when `iw` is unavailable. DFS channels are not advertised yet.
+- Channel "Auto" is written as UCI `channel='auto'` with `channels` limited to
+  the controller's `channelRange`, instead of `channel='0'` with no limit, which
+  let OpenWrt ACS pick a DFS channel the regulatory domain could not run and
+  silently disabled the radio.
+- `OMADA_WIFI_COUNTRY` sets the regulatory country on every radio at startup
+  (the controller never sends one), and a warning is logged when radios have no
+  country. Channels the regulatory domain marks "no IR" are no longer
+  advertised to the controller.
+- One Adopt click no longer starts several adoption attempts: PRE_ADOPT_REQUEST
+  retransmissions within 5 s of a finished attempt are ignored. The extra
+  attempts were also what produced the misleading "controller did not return a
+  username" error after a rejected password.
+- A controller Forget no longer needs an agent restart: discovery restarts as
+  a factory device (`isFactory=true`) instead of managed rediscovery, which the
+  controller listed as "managed by others". A Forget right after a fresh
+  adoption no longer makes the agent process exit.
 - Channel capability flags include the base 20 MHz bit, so the controller
   offers channels for a 20 MHz width.
 - `led.enable` no longer fails the whole SET_REQUEST when LED control is not

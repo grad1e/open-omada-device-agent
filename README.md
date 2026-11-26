@@ -18,8 +18,12 @@ fixtures, and future device adapters.
 
 ## Current status
 
-The current reference implementation targets the ECSP V2 family observed with
-Omada Network Application `6.2.14.11` and an EAP110 v4-compatible AP profile.
+The reference implementation targets the ECSP V2 family. It was first built
+against Omada Network Application `6.2.14.11` with an EAP110 v4-compatible AP
+profile, and has since been validated against Controller `6.3.0.111` with a
+dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
+(`OMADA_DEVICE_MODEL`, see the
+[configuration reference](docs/configuration.md#device-identity)).
 
 | Area | Status |
 | --- | --- |
@@ -32,15 +36,17 @@ Omada Network Application `6.2.14.11` and an EAP110 v4-compatible AP profile.
 | Managed state persistence | ✅ Working |
 | Restart without another manual Adopt | ✅ Working |
 | Managed rediscovery / stale-context recovery | ✅ Working |
-| Periodic device informs | ✅ Working |
+| Periodic device informs | ✅ Working; telemetry in the formats Controller 6.3 parses |
+| Device IP shown in the controller | ✅ `OMADA_DEVICE_IP=local` reports the address used to reach the controller (IPv4 or IPv6) |
+| Radio capability advertisement | ✅ From `iw list`: channels, widths up to 160 MHz, antennas, wireless modes; DFS channels when the regulatory domain supports radar detection |
 | `SET_REQUEST` acknowledgement | 🟡 Partial; rejects unsupported keys |
-| Radio/SSID configuration | 🟡 Partial OpenWrt UCI adapter |
+| Radio/SSID configuration | 🟡 OpenWrt UCI adapter: SSIDs, channel, width (20–160 MHz), Auto channel range, Wi-Fi country (`OMADA_WIFI_COUNTRY`) |
 | SSID VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
 | Management VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
 | DHCP lease, openNDS and hostapd client reporting | 🟡 Partial; hostapd association is source of truth |
-| OpenWrt radio/SSID telemetry | 🟡 Partial via `ubus`, hostapd counters and radio traffic aggregates |
+| OpenWrt radio/SSID telemetry | 🟡 Live channel, width and mode, per-SSID stats and channel utilisation via `ubus`, hostapd and `iw` |
 | Client operations and rate limits | 🟡 Optional `ubus`/nftables adapters |
-| LED enable/disable/locate | 🟡 Optional sysfs adapter |
+| LED enable/disable/locate | 🟡 Optional sysfs adapter; state survives Locate and agent restarts |
 | FORGET / forget-no-reset response | ✅ Working |
 | Captive portal sessions/enforcement | 🟡 openNDS enforcement, free-policy walled garden, TP-Link External Portal redirect parameters, and client auth state are wired |
 | Portal RADIUS authentication | 🟡 Library support; not wired to HTTP portal flow |
