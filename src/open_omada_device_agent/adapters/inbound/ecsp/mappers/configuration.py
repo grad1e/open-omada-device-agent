@@ -38,6 +38,9 @@ KNOWN_COMMON_KEYS = {"sequenceId", "configVersion", "configVersionInc"}
 # do not currently require a direct OpenWrt side effect for the supported AP
 # runtime to stay correct.
 CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
+    # Site Settings save sends {"logoutDomain": "portal.tplink.net"} (portal
+    # logout domain); not applied to openNDS yet.
+    "controllerSetting",
     "ipGroup",
     "ipv6Group",
     "lanSetting",

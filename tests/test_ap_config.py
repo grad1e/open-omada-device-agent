@@ -271,3 +271,11 @@ def test_validate_ssid_rejects_names_over_32_bytes():
 def test_validate_vlan_id_accepts_valid_range():
     assert validate_vlan_id(1) == 1
     assert validate_vlan_id(4094) == 4094
+
+
+def test_site_settings_controller_setting_is_passive_not_rejected():
+    # Controller 6.3 sends this alone after any Site Settings save.
+    update = parse_config_body({"controllerSetting": {"logoutDomain": "portal.tplink.net"}})
+
+    assert update.unhandled_keys == ()
+    assert update.passive_keys == ("controllerSetting",)
