@@ -29,7 +29,8 @@ All notable project changes will be documented in this file.
   leaves dropbear alone.
 - Device Config → Services → LLDP: when `lldpd` is installed the agent
   advertises LLDP support, runs LLDP (only LLDP, not CDP/FDP/SONMP/EDP) on the
-  LAN bridge's wired ports while the controller has it on, stops lldpd when
+  LAN bridge's wired ports while the controller has it on (without the
+  package's placeholder LLDP-MED location), stops lldpd when
   it is off, and reports the LLDP neighbours it hears in the inform.
   `scripts/deploy-openwrt.sh` installs `lldpd` and leaves it stopped until
   LLDP is enabled. `OMADA_CAP_LLDP=false` turns it off.

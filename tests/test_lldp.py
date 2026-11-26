@@ -30,6 +30,7 @@ lldpd.config.enable_fdp='1'
 lldpd.config.enable_sonmp='1'
 lldpd.config.enable_edp='1'
 lldpd.config.lldp_class='4'
+lldpd.config.lldp_location='address country EU'
 lldpd.config.interface='loopback' 'lan'
 """
 
@@ -131,6 +132,7 @@ def test_batch_runs_lldp_only_on_the_wired_ports():
         "delete lldpd.config.interface",
         "add_list lldpd.config.interface='lan1'",
         "add_list lldpd.config.interface='lan2'",
+        "delete lldpd.config.lldp_location",  # placeholder LLDP-MED location
     ]
 
 

@@ -6,7 +6,10 @@ and site settings are already resolved. The agent writes these options of
 
 - ``enable_lldp`` on and CDP, FDP, SONMP and EDP off, as on an EAP;
 - ``interface``: the wired ports of the LAN bridge. lldpd on the bridge
-  itself would not hear neighbours, since bridges do not pass LLDP frames up.
+  itself would not hear neighbours, since bridges do not pass LLDP frames up;
+- ``lldp_location`` is removed. The package default ``address country EU`` is
+  a placeholder LLDP-MED location (used by IP phones for emergency calls);
+  the controller sends no location, so the AP should not claim one.
 
 lldpd sends the MAC of a LAN port as the chassis ID (subtype MAC, as an EAP
 does). The bridge cannot be used for it: lldpd does not manage bridges and
@@ -37,6 +40,7 @@ log = logging.getLogger("open_omada.lldp")
 
 SECTION = "config"
 _OFF_PROTOCOLS = ("enable_cdp", "enable_fdp", "enable_sonmp", "enable_edp")
+_REMOVED_OPTIONS = ("lldp_location",)
 _SHOW_LINE = re.compile(r"^lldpd\.config(?:\.([^=]+))?=(.*)$")
 _QUOTED = re.compile(r"'((?:[^']|'\\'')*)'")
 # Omada capability string: one '0'/'1' per LLDP capability, in this order.
@@ -115,6 +119,7 @@ def build_lldp_batch(
                 lines.extend(f"add_list lldpd.{SECTION}.{option}={_quote(item)}" for item in value)
         elif have != value:
             lines.append(f"set lldpd.{SECTION}.{option}={_quote(value)}")
+    lines.extend(f"delete lldpd.{SECTION}.{option}" for option in _REMOVED_OPTIONS if option in current)
     return lines
 
 
