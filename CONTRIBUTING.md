@@ -58,10 +58,33 @@ agent on a lab access point with `scripts/deploy-openwrt.sh` (see
 
 Use a lab controller, never a production one.
 
+## Branches and merging
+
+`develop` is protected: every change, however small, lands through a pull
+request whose CI checks pass. Nobody pushes to it directly.
+
+1. Branch from the latest `develop`:
+   `git switch -c fix/short-name develop` (prefixes `feat/`, `fix/`, `docs/`,
+   `refactor/`, `chore/`).
+2. Commit there (see [Commit style](#commit-style)). Rewriting history with
+   `git commit --fixup` and `git rebase -i --autosquash` is fine on your own
+   branch until it is merged.
+3. Push the branch and open a pull request into `develop`.
+4. When CI passes, merge with **Rebase and merge**, the only method enabled.
+   It keeps every commit and a linear history. The branch is deleted
+   automatically.
+
+If `develop` moved on while your PR was open, rebase the branch on it
+(`git rebase develop`) and force-push the branch; CI must pass on the
+rebased commits.
+
+`main` mirrors upstream. To bring in upstream changes, update `main` from
+upstream, then merge it into `develop` through a `chore/sync-upstream`
+branch and pull request.
+
 ## Pull requests
 
-Open pull requests against `develop`. Keep protocol changes small enough to
-review. A good PR includes:
+Keep protocol changes small enough to review. A good PR includes:
 
 1. a short description of the observed behavior;
 2. a test or reproducible lab procedure;

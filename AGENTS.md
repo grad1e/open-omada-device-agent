@@ -54,7 +54,10 @@ Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
 
 ## Commits
 
-- Work on `develop` or a branch from it. `main` mirrors upstream.
+- Never commit to `develop` directly; it is protected. Branch from it
+  (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/` + short name), open a PR
+  into `develop`, and merge with Rebase and merge once CI passes. `main`
+  mirrors upstream. Details: CONTRIBUTING.md, "Branches and merging".
 - One logical change per commit, with its tests in the same commit. Each
   commit must pass `pytest` and `ruff`.
 - [Conventional Commits](https://www.conventionalcommits.org/):
@@ -64,7 +67,7 @@ Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
 - Stage files by name (`git add <file>`), not `git add .`, and read
   `git diff --cached` before committing.
 - Keep refactors, formatting and features in separate commits.
-- Never rewrite shared history, force-push, or run `git reset --hard`,
+- Never rewrite `develop` or `main`, force-push them, or run `git reset --hard`,
   `git clean` or `git checkout -- .` without the owner's say-so. Leave changes
   you did not make alone.
 - Do not commit `.env*` (except `.env.example`), `.omada-*` state files,
