@@ -105,7 +105,7 @@ def test_ax_hardware_advertises_80_mhz_and_wifi6_radio_caps():
 
     assert profile.device_misc()["support_11ac"] is True
     five_cap = next(c for c in profile.radio_cap() if c["radioId"] == 1)
-    assert (five_cap["mimo"], five_cap["ofdma"], five_cap["mcsLevel"]) == (4, 1, 11)
+    assert (five_cap["mimo"], five_cap["mcsLevel"]) == (4, 11)
 
     five = _channels(profile, "5G")
     assert five[36]["cFlag"] & 0x800000
@@ -120,6 +120,8 @@ def test_ax_hardware_advertises_80_mhz_and_wifi6_radio_caps():
     # controller's Tx Power range reaches what the radio can do.
     assert all(c["mPow"] == 30 for c in five.values())
     assert (five_cap["minPow"], five_cap["maxPow"]) == (1, 30)
+    # OFDMA can't be turned off on OpenWrt: hide the checkbox, report it on.
+    assert (five_cap["ofdma"], five_cap["ofdmaEnable"]) == (0, 1)
 
     two = _channels(profile, "2.4G")
     assert all(not c["cFlag"] & (0x100000 | 0x800000) for c in two.values())

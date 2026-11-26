@@ -297,10 +297,10 @@ def _radio_cap_item(
     hardware: RadioHardware | None = None,
     max_power: int = 20,
 ) -> dict[str, Any]:
-    mimo, ofdma, mcs_level = 1, 0, 7
+    mimo, ofdma_on, mcs_level = 1, 0, 7
     if hardware is not None:
         mimo = max(1, hardware.streams)
-        ofdma = 1 if hardware.he else 0
+        ofdma_on = 1 if hardware.he else 0
         mcs_level = 11 if hardware.he else 9 if hardware.vht else 7
     return {
         "radioId": radio_id,
@@ -309,8 +309,12 @@ def _radio_cap_item(
         "maxPowOd": max_power,
         "limitMaxPow": max_power,
         "mimo": mimo,
-        "ofdma": ofdma,
-        "ofdmaEnable": 0,
+        # ``ofdma`` = 1 makes the controller show the OFDMA checkbox (it sets
+        # supportOFDMA<band> from this field). OpenWrt has no switch to turn
+        # OFDMA off on Wi-Fi 6 radios, so hide the checkbox and report the
+        # state the driver actually runs: on for 802.11ax, off otherwise.
+        "ofdma": 0,
+        "ofdmaEnable": ofdma_on,
         "mcsLevel": mcs_level,
         "supportSsidNum": max_ssids,
         "supportAntennaDirection": [],

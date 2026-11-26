@@ -72,6 +72,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- OFDMA: the controller's OFDMA checkbox is hidden (`radioCap.ofdma=0`), since
+  OpenWrt has no switch to turn OFDMA off on Wi-Fi 6 radios, and
+  `radioCap.ofdmaEnable` now reports it on for 802.11ax radios instead of off.
 - Tx Power reaches what the radio can do: `radioCap.maxPow` and each
   channel's `mPow` now come from the per-channel limit `iw phy` reports
   (30 dBm on the Jio under IN). It was fixed at 20 dBm, so Custom stopped at
