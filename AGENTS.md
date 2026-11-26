@@ -73,6 +73,22 @@ Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
 - Do not commit `.env*` (except `.env.example`), `.omada-*` state files,
   packet captures, dumps or other temporary files.
 
+## Reviewing pull requests
+
+Every AI agent that opens a pull request must review it right after
+creating it, before doing anything else:
+
+1. Read the diff: `gh pr diff <number> -R <owner>/<repo>`.
+2. Look for correctness bugs, controller-protocol mismatches (field names,
+   types, units), OpenWrt changes that could cut the AP off its network,
+   shell injection in commands run on the device, secrets in code or logs,
+   and missing tests. Check the Rules and Commits sections above.
+3. Report only real problems, with file and line, to the person you are
+   working with. Do not post PR comments or push fixes unless they ask.
+
+Claude Code runs this automatically through `.claude/hooks/review-new-pr.sh`;
+other agents follow this section.
+
 ## Verifying on hardware
 
 Tests do not cover the controller. For behavior changes, check on a lab
