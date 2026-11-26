@@ -39,8 +39,8 @@ dev = [
 open-omada-agent = "open_omada_device_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/open-omada"
-Organization = "https://github.com/open-omada"
+Homepage = "https://github.com/grad1e/open-omada-device-agent"
+Upstream = "https://github.com/adryanalencar/open-omada-device-agent"
 
 [tool.setuptools.packages.find]
 where = ["src"]

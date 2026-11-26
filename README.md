@@ -7,9 +7,11 @@ that implements enough of the device side of Omada ECSP to discover, adopt,
 authenticate, synchronize, reconnect, and report a reference access point to an
 Omada Network Application controller.
 
-The project is maintained under the **Open Omada** organization and is intended
-as a foundation for open device integrations, protocol documentation, test
-fixtures, and future device adapters.
+This repository is an independently developed fork of
+[adryanalencar/open-omada-device-agent](https://github.com/adryanalencar/open-omada-device-agent)
+(Apache-2.0), focused on running the agent on OpenWrt access points. Its main
+branch is `develop`. It is a foundation for open device integrations, protocol
+documentation, test fixtures, and future device adapters.
 
 > [!WARNING]
 > This project is **alpha software**. It is not affiliated with, endorsed by, or
@@ -167,7 +169,7 @@ answers at its new address: `ssh root@192.168.10.2`.
 On your computer:
 
 ```bash
-git clone https://github.com/adryanalencar/open-omada-device-agent.git
+git clone https://github.com/grad1e/open-omada-device-agent.git
 cd open-omada-device-agent
 ```
 

@@ -241,6 +241,13 @@ All notable project changes will be documented in this file.
 
 ### Documentation
 
+- The project now lives at
+  [grad1e/open-omada-device-agent](https://github.com/grad1e/open-omada-device-agent),
+  a fork of the upstream repository with `develop` as its main branch.
+  CONTRIBUTING.md covers AI-assisted changes and hardware testing,
+  SECURITY.md covers sensitive logs and features that change the AP's
+  network, and AGENTS.md (read by `CLAUDE.md`) is an English guide for
+  coding agents.
 - First adoption verifies against factory `admin` / `admin`; the site Device
   Account applies after adoption. `OMADA_DEVICE_IP` is displayed as-is.
 - Reworked ECSP protocol and lifecycle documentation around Mermaid sequence diagrams for clearer transport, ordering, authentication, configuration, reconnect, and managed-rediscovery flows.

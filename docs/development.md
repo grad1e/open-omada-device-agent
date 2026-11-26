@@ -36,11 +36,13 @@ ruff check .
 
 ```bash
 cp .env.example .env
-open-omada-agent --dump-tx
+open-omada-agent
 ```
 
-Use a dedicated lab controller. The `--dump-tx` option logs complete ECSP JSON
-and may expose operational metadata, so sanitize logs before sharing them.
+Use a dedicated lab controller. `--dump-tx` logs complete ECSP JSON, including
+Wi-Fi passwords from the controller's config, so sanitize logs before sharing
+them. To run on an access point, see "Install on an OpenWrt access point" in
+the README.
 
 ## Adding a message family
 
