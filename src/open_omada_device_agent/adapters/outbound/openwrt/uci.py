@@ -162,7 +162,7 @@ class OpenWrtUciAdapter:
 
     def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
         """Read ``wireless`` sections when Advanced radio settings are involved."""
-        if not (update.radio_advanced or update.wlans):
+        if not (update.radio_advanced or update.wlans or update.wlan_bands):
             return {}
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
@@ -322,6 +322,9 @@ def build_uci_batch(
         lines.append(_set("wireless", section, "disabled", "1"))
     for wlan in omitted_wlans:
         lines.append(f"delete wireless.{_wlan_section(wlan)}")
+    omitted = {_wlan_section(wlan) for wlan in omitted_wlans}
+    for section in _removed_ssid_sections(update.wlan_bands, rebuilt | omitted, wireless_state):
+        lines.append(f"delete wireless.{section}")
     for wlan in active_wlans:
         lines.extend(_wlan_lines(wlan, capabilities, portal_network))
         uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
@@ -362,6 +365,24 @@ def _radio_advanced_lines(
             if iface not in skip:
                 lines.append(_set("wireless", iface, "uapsd", value))
     return tuple(lines)
+
+
+def _removed_ssid_sections(
+    bands: tuple[RadioBand, ...],
+    keep: set[str],
+    wireless_state: WirelessState,
+) -> tuple[str, ...]:
+    """Agent-created SSIDs on ``bands`` that the controller no longer lists."""
+    prefixes = tuple(f"openomada_{band.value}_" for band in bands)
+    return tuple(
+        name
+        for name, options in wireless_state.items()
+        if prefixes
+        and name.startswith(prefixes)
+        and name not in keep
+        and options.get(".type") == "wifi-iface"
+        and options.get("openomada_managed") == "1"
+    )
 
 
 def _radio_uapsd(wireless_state: WirelessState) -> dict[str, bool]:

@@ -6,7 +6,7 @@ from ..contexts.clients.domain import ClientAuthConfig, ClientControlOperation, 
 from ..contexts.device.domain import LedConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig
 from ..contexts.networking.domain import LanIpSetting, ManagementVlan
 from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
-from ..contexts.wireless.domain import RadioAdvancedConfig, RadioConfig, WirelessNetwork
+from ..contexts.wireless.domain import RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork
 
 @dataclass(frozen=True)
 class ApplyDeviceConfigurationCommand:
@@ -15,6 +15,8 @@ class ApplyDeviceConfigurationCommand:
     config_version_inc: int | None
     radios: tuple[RadioConfig, ...] = ()
     wlans: tuple[WirelessNetwork, ...] = ()
+    # Bands whose ssid_* key was sent: that list is the band's complete SSID set.
+    wlan_bands: tuple[RadioBand, ...] = ()
     management_vlan: ManagementVlan | None = None
     portal_free_policy: PortalFreePolicy | None = None
     portal_configs: tuple[PortalConfiguration, ...] = ()

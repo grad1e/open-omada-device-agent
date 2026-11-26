@@ -107,6 +107,7 @@ def parse_set_request(message: Mapping[str, Any]) -> AccessPointConfigUpdate:
 def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
     radios = []
     wlans = []
+    wlan_bands = []
 
     for key, band in RADIO_KEYS.items():
         raw = body.get(key)
@@ -117,6 +118,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         raw = body.get(key)
         if raw is not None:
             wlans.extend(_parse_ssid_config(band, raw))
+            wlan_bands.append(band)
 
     radio_advanced = _parse_radio_advanced(body)
 
@@ -176,6 +178,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         config_version_inc=_optional_int(body.get("configVersionInc")),
         radios=tuple(radios),
         wlans=tuple(wlans),
+        wlan_bands=tuple(wlan_bands),
         management_vlan=management_vlan,
         portal_free_policy=portal_free_policy,
         portal_configs=portal_configs,

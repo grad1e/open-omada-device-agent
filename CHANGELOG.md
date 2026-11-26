@@ -110,6 +110,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- An SSID deleted in the controller kept broadcasting. Each `ssid_*` list in a
+  SET is the band's complete SSID set, so the agent now deletes the SSIDs it
+  created on that band that the list no longer has. SSIDs made by hand in
+  OpenWrt are left alone.
 - OFDMA: the controller's OFDMA checkbox is hidden (`radioCap.ofdma=0`), since
   OpenWrt has no switch to turn OFDMA off on Wi-Fi 6 radios, and
   `radioCap.ofdmaEnable` now reports it on for 802.11ax radios instead of off.
