@@ -32,8 +32,8 @@ Options:
   --log-file PATH       Remote log file. Default: /tmp/open-omada-agent.log
   --no-restart          Copy files but do not restart the agent
   --no-packages         Do not install OpenWrt packages (python3,
-                        python3-dotenv, python3-psutil, snmpd, opennds,
-                        dnsmasq-full, conntrack) with apk or opkg
+                        python3-dotenv, python3-psutil, snmpd, lldpd,
+                        opennds, dnsmasq-full, conntrack) with apk or opkg
   -h, --help            Show this help
 
 Environment overrides:
@@ -117,6 +117,7 @@ set -eu
 # python3, python3-dotenv, python3-psutil: the agent itself.
 # snmpd: Device Config -> Services -> SNMP. It stays stopped until the
 # controller enables SNMP; the agent then starts it.
+# lldpd: Device Config -> Services -> LLDP, likewise started by the agent.
 # opennds, dnsmasq-full, conntrack: captive portal.
 if command -v apk >/dev/null 2>&1; then
     PM=apk
@@ -125,7 +126,7 @@ elif command -v opkg >/dev/null 2>&1; then
     PM=opkg
     SNMPD=snmpd
 else
-    echo "Warning: neither apk nor opkg found; install python3, python3-dotenv, python3-psutil, snmpd, opennds, dnsmasq-full and conntrack by hand" >&2
+    echo "Warning: neither apk nor opkg found; install python3, python3-dotenv, python3-psutil, snmpd, lldpd, opennds, dnsmasq-full and conntrack by hand" >&2
     exit 0
 fi
 
@@ -139,6 +140,8 @@ pm_installed() {
 
 had_snmpd=0
 [ -x /usr/sbin/snmpd ] && had_snmpd=1
+had_lldpd=0
+[ -x /usr/sbin/lldpd ] && had_lldpd=1
 
 if [ "$PM" = apk ]; then
     apk update >/dev/null
@@ -147,7 +150,7 @@ else
 fi
 
 missing=""
-for pkg in python3 python3-dotenv python3-psutil "$SNMPD" conntrack; do
+for pkg in python3 python3-dotenv python3-psutil "$SNMPD" lldpd conntrack; do
     pm_installed "$pkg" || missing="$missing $pkg"
 done
 # A package that provides /usr/sbin/snmpd (e.g. snmpd-nossl) is enough.
@@ -213,7 +216,12 @@ if [ "$had_snmpd" -eq 0 ] && [ -x /etc/init.d/snmpd ]; then
     /etc/init.d/snmpd disable >/dev/null 2>&1 || true
     echo "snmpd installed; it starts when SNMP is enabled in the controller"
 fi
-echo "Packages ready: python3 python3-dotenv python3-psutil $SNMPD opennds dnsmasq-full conntrack"
+if [ "$had_lldpd" -eq 0 ] && [ -x /etc/init.d/lldpd ]; then
+    /etc/init.d/lldpd stop >/dev/null 2>&1 || true
+    /etc/init.d/lldpd disable >/dev/null 2>&1 || true
+    echo "lldpd installed; it starts when LLDP is enabled in the controller"
+fi
+echo "Packages ready: python3 python3-dotenv python3-psutil $SNMPD lldpd opennds dnsmasq-full conntrack"
 PACKAGES
     then
         echo "Warning: package step failed (no internet on the AP?); deploying anyway" >&2
