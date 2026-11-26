@@ -252,12 +252,26 @@ disables portal acceptance.
 At startup on OpenWrt, the agent also applies an idempotent platform bootstrap:
 it sets `bridge_empty=1` on the configured LAN bridge so Wi-Fi-only devices can
 create `br-lan`, reloads network/Wi-Fi when that prerequisite changed, enables
-openNDS on the LAN bridge when installed, and disables openNDS preemptive
+openNDS on `OMADA_OPENNDS_INTERFACE` (default: the LAN bridge) when installed, and disables openNDS preemptive
 authentication so clients follow the Omada ThemeSpec redirect. It also sets
 `gatewayfqdn=disable` so the first openNDS preauth redirect uses the gateway IP
 instead of the default `status.client` name; this keeps macOS/iOS captive checks
 working when a client has custom DNS such as `8.8.8.8`. Lab WAN access for
 SSH/LuCI is available only through `OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT=true`.
+
+### Portal on an AP that is not the router
+
+openNDS treats every device on its interface as a portal client, including
+the upstream router. On an AP whose uplink is on the LAN bridge, openNDS on
+that bridge cuts the AP off from the gateway and the controller, so the agent
+refuses to start openNDS on the interface that holds the default route.
+
+Put portal SSIDs on a routed guest network instead: a UCI network with its own
+subnet, DHCP and NAT. Set `OMADA_PORTAL_NETWORK` to that network and
+`OMADA_OPENNDS_INTERFACE` to its bridge. The agent attaches portal SSIDs to the
+guest network and starts openNDS when the first portal SSID arrives. See
+[Captive portal on OpenWrt](docs/configuration.md#captive-portal-on-openwrt)
+for a worked example.
 
 Validated behavior today:
 

@@ -54,6 +54,8 @@ class AgentSettings:
     openwrt_enable_wan_management: bool
     openwrt_wan_zone: str
     wifi_country: str
+    opennds_interface: str
+    portal_network: str
     lab_ack_control_plane_config: bool
     ecsp_version: str
     ecsp_ver_cap: int

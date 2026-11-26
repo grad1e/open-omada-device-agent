@@ -61,6 +61,8 @@ class AgentSettings(RuntimeAgentSettings):
             openwrt_enable_wan_management=config.OPENWRT_ENABLE_WAN_MANAGEMENT,
             openwrt_wan_zone=config.OPENWRT_WAN_ZONE,
             wifi_country=config.WIFI_COUNTRY,
+            opennds_interface=config.OPENNDS_INTERFACE,
+            portal_network=config.PORTAL_NETWORK,
             lab_ack_control_plane_config=config.LAB_ACK_CONTROL_PLANE_CONFIG,
             ecsp_version=config.ECSP_VERSION,
             ecsp_ver_cap=config.ECSP_VER_CAP,

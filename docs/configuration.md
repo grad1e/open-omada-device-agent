@@ -142,6 +142,8 @@ where lab-only manual setup belongs.
 | `OMADA_OPENWRT_BOOTSTRAP_OPENNDS` | `true` | Enable and start openNDS when installed |
 | `OMADA_OPENNDS_GATEWAY_PORT` | `2050` | openNDS local gateway port |
 | `OMADA_OPENNDS_GATEWAY_NAME` | device name | openNDS gateway name; empty uses `OMADA_DEVICE_NAME` |
+| `OMADA_OPENNDS_INTERFACE` | `OMADA_OPENWRT_LAN_BRIDGE` | Bridge openNDS guards. The agent refuses to start openNDS on the bridge that carries the default route |
+| `OMADA_PORTAL_NETWORK` | empty | UCI network that portal SSIDs join, for example `guest`; empty keeps them on `lan` |
 | `OMADA_SITE_NAME` | empty | Human-readable fallback for External Portal redirects when no site ID is available |
 | `OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT` | `false` | Lab-only opt-in to open SSH, LuCI HTTP, and LuCI HTTPS from the WAN zone |
 | `OMADA_OPENWRT_WAN_ZONE` | `wan` | Firewall zone used by the WAN management opt-in rules |
@@ -184,6 +186,43 @@ For older OpenWrt package feeds:
 ```bash
 opkg update
 opkg install opennds dnsmasq-full conntrack
+```
+
+openNDS treats every device on the bridge it guards as a portal client,
+including the upstream router. On an AP that is not the router (a "dumb AP",
+uplink on `br-lan`), guarding `br-lan` cuts the AP off from its gateway and the
+controller, so the agent refuses to do that. Give portal SSIDs a routed guest
+network instead: its own bridge and subnet, DHCP on the AP, a firewall zone
+forwarding to `lan`, and masquerading of the guest subnet. Then set
+`OMADA_PORTAL_NETWORK=guest` and `OMADA_OPENNDS_INTERFACE=br-guest`.
+
+```bash
+uci set network.br_guest=device
+uci set network.br_guest.type='bridge'
+uci set network.br_guest.name='br-guest'
+uci set network.br_guest.bridge_empty='1'
+uci set network.guest=interface
+uci set network.guest.proto='static'
+uci set network.guest.device='br-guest'
+uci set network.guest.ipaddr='10.77.0.1/24'
+uci set dhcp.guest=dhcp
+uci set dhcp.guest.interface='guest'
+uci set dhcp.guest.start='100'
+uci set dhcp.guest.limit='100'
+uci set firewall.guest=zone
+uci set firewall.guest.name='guest'
+uci set firewall.guest.network='guest'
+uci set firewall.guest.input='REJECT'
+uci set firewall.guest.output='ACCEPT'
+uci set firewall.guest.forward='REJECT'
+uci set firewall.guest_lan=forwarding
+uci set firewall.guest_lan.src='guest'
+uci set firewall.guest_lan.dest='lan'
+uci set firewall.@zone[0].masq='1'
+uci add_list firewall.@zone[0].masq_src='10.77.0.0/24'
+# Also allow DHCP (udp 67-68), DNS (53) and the openNDS port (tcp 2050)
+# from the guest zone to the AP.
+uci commit; /etc/init.d/network reload; /etc/init.d/firewall reload
 ```
 
 Minimal UCI example:

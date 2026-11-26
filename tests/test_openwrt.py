@@ -417,3 +417,34 @@ def test_wlan_section_records_the_controller_ssid_id_for_inform_stats():
 def _without_state_reads(calls):
     """Drop the ``uci show wireless`` read that precedes SSID/radio batches."""
     return [call for call in calls if call[0][:3] != ("uci", "-q", "show")]
+
+
+def _portal_and_open_wlans():
+    return parse_config_body(
+        {
+            "ssid_2G": {
+                "radioId": 0,
+                "ssid": [
+                    {"ssidName": "guest", "portal": True},
+                    {"ssidName": "office"},
+                ],
+            }
+        }
+    )
+
+
+def test_portal_ssids_join_the_portal_network_when_configured():
+    batch = "\n".join(
+        build_uci_batch(
+            _portal_and_open_wlans(), _caps(supports_portal=True), portal_network="guest"
+        )
+    )
+
+    assert "set wireless.openomada_2g_guest.network='guest'" in batch
+    assert "set wireless.openomada_2g_office.network='lan'" in batch
+
+
+def test_portal_ssids_stay_on_lan_without_a_portal_network():
+    batch = "\n".join(build_uci_batch(_portal_and_open_wlans(), _caps(supports_portal=True)))
+
+    assert "set wireless.openomada_2g_guest.network='lan'" in batch

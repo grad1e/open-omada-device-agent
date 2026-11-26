@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from ....application.contracts import PlatformCapabilities
 from ....contexts.wireless.domain import RadioBand
+from .opennds import default_route_device, uplink_capture_message
 from .uci import CommandRunner, SubprocessRunner, usable_channels
 
 
@@ -28,6 +29,7 @@ class OpenWrtBootstrapConfig:
     enable_wan_management: bool = False
     wan_zone: str = "wan"
     wifi_country: str = ""
+    opennds_interface: str = ""
 
 
 @dataclass(frozen=True)
@@ -293,6 +295,12 @@ class OpenWrtStartupBootstrap:
         )
 
     def _ensure_opennds(self) -> OpenWrtBootstrapResult:
+        interface = self._config.opennds_interface or self._config.lan_bridge
+        if interface == default_route_device(self._runner):
+            return OpenWrtBootstrapResult(
+                applied=True,
+                warnings=(uplink_capture_message(interface),),
+            )
         lines: list[str] = []
         section = "@opennds[0]"
         if self._uci_get("opennds.@opennds[0]") != "opennds":
@@ -305,7 +313,7 @@ class OpenWrtStartupBootstrap:
             "opennds",
             section,
             "gatewayinterface",
-            self._config.lan_bridge,
+            interface,
         )
         self._append_set_if_needed(
             lines,

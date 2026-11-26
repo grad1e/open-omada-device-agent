@@ -25,6 +25,9 @@ All notable project changes will be documented in this file.
   removes the option. The agent advertises `lb`, `rssiFilter`, `qos` and
   `wlanAdv` with WLAN support. OFDMA (`wirelessAdv_*`) is accepted but not
   applied: OpenWrt has no switch for it.
+- `OMADA_PORTAL_NETWORK` puts portal SSIDs on their own UCI network and
+  `OMADA_OPENNDS_INTERFACE` points openNDS at its bridge, so the captive portal
+  works on an AP that is not the router.
 - Adoption sends `devCap` with antenna count (`mimo2G`/`mimo5G`), supported
   wireless modes and OFDMA bands, using the bitmask values of real EAPs of the
   same Wi-Fi generation.
@@ -70,6 +73,14 @@ All notable project changes will be documented in this file.
 - A `SET_REQUEST` without `configVersion`/`configVersionInc` (one-off commands
   such as `rogueApScan`) keeps the current version. It used to drop the
   managed session, which then re-adopted.
+- openNDS is started when a portal SSID is configured and it is not running.
+  On a guest bridge it exits until the first portal SSID brings the bridge
+  up, and a "No Authentication" portal SET carries no portal policy that
+  would restart it.
+- The agent no longer starts openNDS on the bridge that carries the default
+  route. On an AP whose uplink router is on `br-lan`, openNDS treated the
+  router as an unauthenticated client and the AP lost its controller
+  connection; startup now warns and portal SETs return an error instead.
 - `--once` exits after one discovery/adoption cycle again; the Forget
   recovery loop kept restarting discovery.
 - After an agent restart, stopping Locate no longer turns the LED off: the

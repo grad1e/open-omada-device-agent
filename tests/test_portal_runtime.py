@@ -99,7 +99,30 @@ def test_portal_runtime_leaves_enforcement_to_opennds_when_available():
 
     assert result.applied is True
     assert result.changed is False
-    assert runner.calls == []
+    assert [command for command, _ in runner.calls] == [("ndsctl", "status")]
+
+
+def test_portal_runtime_starts_opennds_when_the_first_portal_ssid_arrives():
+    class _StoppedOpenNds(RecordingRunner):
+        def run(self, args, *, input_text=None):
+            if tuple(args) == ("ndsctl", "status"):
+                self.calls.append((tuple(args), input_text))
+                return CommandResult(returncode=1)
+            return super().run(args, input_text=input_text)
+
+    update = parse_config_body(
+        {"ssid_2G": {"ssid": [{"ssidName": "guest", "portal": True}]}}
+    )
+    runner = _StoppedOpenNds()
+
+    result = OpenWrtPortalRuntime(runner, interface="").reconcile(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert result.applied is True
+    assert result.changed is True
+    assert (("/etc/init.d/opennds", "restart"), None) in runner.calls
 
 
 def test_portal_runtime_applies_free_policy_to_opennds_without_portal_wlan():
@@ -161,11 +184,12 @@ def test_portal_runtime_applies_portal_config_redirect_to_opennds():
 
     assert result.applied is True
     assert result.changed is True
-    assert (
-        ("tee", "/usr/lib/opennds/theme_openomada_redirect.sh"),
-        runner.calls[0][1],
-    ) in runner.calls
-    assert "https://portal.example.com/login" in (runner.calls[0][1] or "")
+    themespec = next(
+        text
+        for command, text in runner.calls
+        if command == ("tee", "/usr/lib/opennds/theme_openomada_redirect.sh")
+    )
+    assert "https://portal.example.com/login" in (themespec or "")
 
 
 def test_portal_runtime_ignores_portal_wlan_beyond_platform_limit():

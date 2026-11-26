@@ -55,7 +55,10 @@ class OpenWrtPortalRuntime:
             )
         if capabilities.has_opennds:
             if not needs_opennds_policy:
-                return PortalRuntimeResult(applied=True, changed=False)
+                started = OpenNdsPortalAdapter(self._runner).ensure_running()
+                if not started.applied:
+                    return PortalRuntimeResult(applied=False, error=started.error)
+                return PortalRuntimeResult(applied=True, changed=started.changed)
             result = OpenNdsPortalAdapter(self._runner).apply(
                 opennds_portal_policy_from_omada_config(
                     free_policy=update.portal_free_policy,

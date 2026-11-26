@@ -391,3 +391,41 @@ def test_startup_falls_back_to_usable_channels_when_none_survive():
     OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_prune_caps())
 
     assert "set wireless.radio1.channels='36 149'" in _batch_payloads(runner)[0]
+
+
+def test_bootstrap_points_opennds_at_the_configured_interface():
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
+                returncode=0, stdout="opennds\n"
+            ),
+            ("ip", "-4", "route", "show", "default"): CommandResult(
+                returncode=0, stdout="default via 192.0.2.1 dev br-lan\n"
+            ),
+        }
+    )
+    OpenWrtStartupBootstrap(
+        runner, config=OpenWrtBootstrapConfig(ensure_lan=False, opennds_interface="br-guest")
+    ).apply(_caps(has_opennds=True))
+
+    assert "set opennds.@opennds[0].gatewayinterface='br-guest'" in _batch_payloads(runner)[0]
+
+
+def test_bootstrap_does_not_put_opennds_on_the_uplink_bridge():
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
+                returncode=0, stdout="opennds\n"
+            ),
+            ("ip", "-4", "route", "show", "default"): CommandResult(
+                returncode=0, stdout="default via 192.0.2.1 dev br-lan\n"
+            ),
+        }
+    )
+    result = OpenWrtStartupBootstrap(
+        runner, config=OpenWrtBootstrapConfig(ensure_lan=False)
+    ).apply(_caps(has_opennds=True))
+
+    assert _batch_payloads(runner) == []
+    assert (("/etc/init.d/opennds", "restart"), None) not in runner.calls
+    assert any("carries the default route" in warning for warning in result.warnings)

@@ -60,6 +60,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             enable_wan_management=settings.openwrt_enable_wan_management,
             wan_zone=settings.openwrt_wan_zone,
             wifi_country=settings.wifi_country,
+            opennds_interface=settings.opennds_interface,
         )
     )
     bootstrap_result = startup_bootstrap.apply(capabilities)
@@ -94,6 +95,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 OpenWrtUciAdapter(
                     management_vlan_interface=settings.management_vlan_interface,
                     management_vlan_device=settings.management_vlan_device,
+                    portal_network=settings.portal_network,
                 ),
                 OpenWrtPortalRuntime(
                     interface=settings.portal_interface,

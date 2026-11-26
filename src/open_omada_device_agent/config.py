@@ -104,6 +104,11 @@ OPENWRT_LAN_BRIDGE = os.getenv("OMADA_OPENWRT_LAN_BRIDGE", "br-lan").strip()
 OPENWRT_LAN_IPADDR = os.getenv("OMADA_OPENWRT_LAN_IPADDR", "192.168.1.1/24").strip()
 OPENWRT_BOOTSTRAP_OPENNDS = _bool("OMADA_OPENWRT_BOOTSTRAP_OPENNDS", True)
 OPENNDS_GATEWAY_PORT = _int("OMADA_OPENNDS_GATEWAY_PORT", 2050)
+# Bridge openNDS guards. Empty uses OMADA_OPENWRT_LAN_BRIDGE. On an AP whose
+# uplink router is on the LAN bridge, use a separate routed guest bridge.
+OPENNDS_INTERFACE = os.getenv("OMADA_OPENNDS_INTERFACE", "").strip()
+# UCI network that portal SSIDs join (e.g. "guest"). Empty keeps them on "lan".
+PORTAL_NETWORK = os.getenv("OMADA_PORTAL_NETWORK", "").strip()
 OPENNDS_GATEWAY_NAME = os.getenv("OMADA_OPENNDS_GATEWAY_NAME", "").strip()
 OPENWRT_ENABLE_WAN_MANAGEMENT = _bool("OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT", False)
 OPENWRT_WAN_ZONE = os.getenv("OMADA_OPENWRT_WAN_ZONE", "wan").strip()

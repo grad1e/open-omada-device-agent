@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import ipaddress
 import html
 import shlex
@@ -51,11 +52,35 @@ class OpenNdsPortalResult:
     error: str = ""
 
 
+def default_route_device(runner: CommandRunner) -> str | None:
+    """Device of the IPv4 default route (the AP's uplink), if any."""
+    try:
+        result = runner.run(["ip", "-4", "route", "show", "default"])
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    match = re.search(r"\bdev\s+(\S+)", result.stdout or "")
+    return match.group(1) if match else None
+
+
+def uplink_capture_message(interface: str) -> str:
+    return (
+        f"openNDS gateway interface {interface} carries the default route: the "
+        "uplink router would be treated as an unauthenticated portal client and "
+        "the AP would lose its controller connection. Put portal SSIDs on a "
+        "routed guest network (OMADA_PORTAL_NETWORK, OMADA_OPENNDS_INTERFACE)."
+    )
+
+
 class OpenNdsPortalAdapter:
     def __init__(self, runner: CommandRunner | None = None) -> None:
         self._runner = runner or SubprocessRunner()
 
     def apply(self, policy: OpenNdsPortalPolicy) -> OpenNdsPortalResult:
+        interface = self._gateway_interface()
+        if interface and interface == default_route_device(self._runner):
+            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface))
         delete_commands = [
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_fqdn_list"],
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_port_list"],
@@ -138,6 +163,34 @@ class OpenNdsPortalAdapter:
                 )
         return OpenNdsPortalResult(applied=True, changed=True)
 
+
+    def ensure_running(self) -> OpenNdsPortalResult:
+        """Start openNDS if it is not running.
+
+        openNDS exits when its bridge has no carrier; a guest bridge only comes
+        up once a portal SSID is attached, so the first portal SSID SET has to
+        start it.
+        """
+        status = self._runner.run(["ndsctl", "status"])
+        if status.returncode == 0:
+            return OpenNdsPortalResult(applied=True, changed=False)
+        interface = self._gateway_interface()
+        if interface and interface == default_route_device(self._runner):
+            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface))
+        result = self._runner.run(["/etc/init.d/opennds", "restart"])
+        if result.returncode != 0:
+            return OpenNdsPortalResult(
+                applied=False,
+                error=(result.stderr or result.stdout or "openNDS restart failed").strip(),
+            )
+        return OpenNdsPortalResult(applied=True, changed=True)
+
+    def _gateway_interface(self) -> str:
+        try:
+            result = self._runner.run(["uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"])
+        except OSError:
+            return ""
+        return (result.stdout or "").strip() if result.returncode == 0 else ""
 
 class OpenNdsClientTelemetry:
     def __init__(self, runner: CommandRunner | None = None) -> None:

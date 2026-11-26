@@ -76,10 +76,12 @@ class OpenWrtUciAdapter:
         *,
         management_vlan_interface: str | None = None,
         management_vlan_device: str | None = None,
+        portal_network: str = "",
     ) -> None:
         self._runner = runner or SubprocessRunner()
         self._management_vlan_interface = management_vlan_interface
         self._management_vlan_device = management_vlan_device
+        self._portal_network = portal_network
 
     def reconcile(
         self,
@@ -126,6 +128,7 @@ class OpenWrtUciAdapter:
             management_vlan_device=self._management_vlan_device,
             current_htmodes=self._current_htmodes(update),
             wireless_state=self._wireless_state(update),
+            portal_network=self._portal_network,
         )
         if not batch:
             return ReconciliationResult(
@@ -270,6 +273,7 @@ def build_uci_batch(
     management_vlan_device: str | None = None,
     current_htmodes: Mapping[str, str] | None = None,
     wireless_state: WirelessState | None = None,
+    portal_network: str = "",
 ) -> tuple[str, ...]:
     lines: list[str] = []
     current_htmodes = current_htmodes or {}
@@ -319,7 +323,7 @@ def build_uci_batch(
     for wlan in omitted_wlans:
         lines.append(f"delete wireless.{_wlan_section(wlan)}")
     for wlan in active_wlans:
-        lines.extend(_wlan_lines(wlan, capabilities))
+        lines.extend(_wlan_lines(wlan, capabilities, portal_network))
         uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
         if uapsd is not None:
             lines.append(_set("wireless", _wlan_section(wlan), "uapsd", "1" if uapsd else "0"))
@@ -498,12 +502,19 @@ def _frequency_to_channel(band: RadioBand, freq: int) -> int | None:
     return (freq - 5000) // 5 if 5160 <= freq <= 5885 else None
 
 
-def _wlan_lines(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> tuple[str, ...]:
+def _wlan_lines(
+    wlan: WirelessNetwork,
+    capabilities: PlatformCapabilities,
+    portal_network: str = "",
+) -> tuple[str, ...]:
     section = _wlan_section(wlan)
     device = _radio_section(wlan.band, wlan.radio_id)
     network = "lan"
     if wlan.vlan.vlan_id is not None and capabilities.supports_ssid_vlan:
         network = f"openomada_vlan{wlan.vlan.vlan_id}"
+    elif wlan.portal.enabled and portal_network:
+        # A routed guest network keeps openNDS off the AP's uplink bridge.
+        network = portal_network
 
     lines = [
         f"delete wireless.{section}",

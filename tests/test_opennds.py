@@ -418,3 +418,37 @@ def test_opennds_portal_adapter_ignores_missing_uci_lists_on_delete():
 
     assert result.applied is True
     assert ("uci", "commit", "opennds") in runner.calls
+
+
+@dataclass
+class _UplinkRunner:
+    gateway_interface: str
+    calls: list
+
+    def run(self, args, *, input_text=None):
+        command = tuple(args)
+        self.calls.append(command)
+        if command == ("uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"):
+            return CommandResult(returncode=0, stdout=self.gateway_interface + "\n")
+        if command == ("ip", "-4", "route", "show", "default"):
+            return CommandResult(returncode=0, stdout="default via 192.0.2.1 dev br-lan\n")
+        return CommandResult(returncode=0)
+
+
+def test_opennds_is_not_restarted_on_the_uplink_bridge():
+    runner = _UplinkRunner("br-lan", [])
+
+    result = OpenNdsPortalAdapter(runner).apply(opennds_portal_policy_from_free_policy(PortalFreePolicy()))
+
+    assert result.applied is False
+    assert "carries the default route" in result.error
+    assert ("/etc/init.d/opennds", "restart") not in runner.calls
+
+
+def test_opennds_restarts_on_a_separate_guest_bridge():
+    runner = _UplinkRunner("br-guest", [])
+
+    result = OpenNdsPortalAdapter(runner).apply(opennds_portal_policy_from_free_policy(PortalFreePolicy()))
+
+    assert result.applied is True
+    assert ("/etc/init.d/opennds", "restart") in runner.calls
