@@ -64,6 +64,11 @@ def local_source_ip(host: str, port: int = 29810) -> str | None:
     return address
 
 
+def forget_local_ip() -> None:
+    """Drop cached source addresses; call it when the AP's address changes."""
+    _local_ip_cache.clear()
+
+
 def _probe_source_ip(host: str, port: int) -> str | None:
     try:
         family, _type, _proto, _name, target = socket.getaddrinfo(

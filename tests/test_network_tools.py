@@ -81,6 +81,15 @@ def test_route_is_cached_between_informs(monkeypatch):
     assert probes == [1]
 
 
+def test_address_change_drops_the_cached_route(monkeypatch):
+    addresses = iter(["192.0.2.254", "192.0.2.106"])
+    monkeypatch.setattr(network_tools.socket, "socket", lambda *_a: _FakeUdp(next(addresses)))
+
+    assert local_source_ip("192.0.2.20") == "192.0.2.254"  # DHCP fallback
+    network_tools.forget_local_ip()  # lease arrived, address changed
+    assert local_source_ip("192.0.2.20") == "192.0.2.106"
+
+
 def test_ipv6_controller_uses_an_ipv6_socket(monkeypatch):
     families = []
 
