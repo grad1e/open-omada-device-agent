@@ -32,6 +32,7 @@ class PlatformCapabilities:
     supports_network_check: bool = False
     supports_snmp: bool = False
     supports_lldp: bool = False
+    supports_time_zone: bool = False
     supports_ip_settings: bool = False
     radio_hardware: tuple[RadioHardware, ...] = ()
 

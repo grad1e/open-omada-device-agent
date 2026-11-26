@@ -117,6 +117,8 @@ def detect_platform_capabilities(
             "OMADA_CAP_LLDP",
             openwrt and has_uci and which("lldpd") is not None and which("lldpcli") is not None,
         ),
+        # The site time zone from the controller sets OpenWrt's system time zone.
+        supports_time_zone=_feature(values, "OMADA_CAP_TIMEZONE", openwrt and has_uci),
         # Device Config -> IP Settings rewrites the LAN address, so it is
         # opt-in; a wrong push could cut the AP off from the controller.
         supports_ip_settings=_feature(values, "OMADA_CAP_IP_SETTINGS", False),
@@ -146,6 +148,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_network_check",
         "supports_snmp",
         "supports_lldp",
+        "supports_time_zone",
         "supports_ip_settings",
     ):
         if getattr(capabilities, field):

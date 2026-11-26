@@ -10,7 +10,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from .adapters.inbound.ecsp.mappers.configuration import parse_set_request
+from .adapters.inbound.ecsp.mappers.configuration import (
+    KNOWN_COMMON_KEYS,
+    parse_set_request,
+    parse_time_zone,
+)
 from .adapters.inbound.ecsp.mappers.portal_auth import parse_portal_auth_request
 
 from .adapters.inbound.ecsp.crypto import calculate_md5_mode_auth
@@ -306,6 +310,13 @@ def _describe_config_update(update: ApplyDeviceConfigurationCommand) -> str:
             f"action:{update.client_rate_config.action},"
             f"limits:{len(update.client_rate_config.limits)}"
         )
+    if update.time_zone is not None:
+        parts.append(
+            f"timeZone=UTC{update.time_zone.utc_offset_minutes:+d}min dst={update.raw_body.get('dst')}"
+        )
+    config_keys = sorted(key for key in update.raw_body if key not in KNOWN_COMMON_KEYS)
+    if config_keys:
+        parts.append(f"keys={','.join(config_keys)}")
     if update.passive_keys:
         parts.append(f"passive={','.join(update.passive_keys)}")
     if update.ack_only_keys:
@@ -313,6 +324,29 @@ def _describe_config_update(update: ApplyDeviceConfigurationCommand) -> str:
     if update.unhandled_keys:
         parts.append(f"unhandled={','.join(update.unhandled_keys)}")
     return " ".join(parts)
+
+
+def _apply_site_time_zone(body: dict[str, Any], *, services: ManagedSessionServices) -> None:
+    """Apply ``timeSetting``/``dst`` from SYSTEM_NEGOTIATION; never fail the session."""
+    time_zone = parse_time_zone(body)
+    if time_zone is None:
+        return
+    log.info(
+        "Site time zone: UTC offset %+d min, daylight saving %s",
+        time_zone.utc_offset_minutes,
+        body.get("dst"),
+    )
+    try:
+        result = services.configuration.execute(
+            ApplyDeviceConfigurationCommand(
+                sequence_id=None, config_version=None, config_version_inc=None, time_zone=time_zone
+            )
+        )
+    except Exception:  # noqa: BLE001 - the time zone must not block adoption
+        log.exception("Could not apply the site time zone")
+        return
+    if not result.applied:
+        log.warning("Could not apply the site time zone: %s", result.error)
 
 
 def _apply_config_update(update: ApplyDeviceConfigurationCommand, *, services: ManagedSessionServices) -> int:
@@ -790,6 +824,7 @@ def run_v2_adoption(
                 system_body.get("sequenceId"),
                 ",".join(sorted(system_body.keys())),
             )
+            _apply_site_time_zone(system_body, services=services)
         else:
             log.warning("SYSTEM_NEGOTIATION has no object body: %r", system_body)
 

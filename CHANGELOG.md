@@ -27,6 +27,11 @@ All notable project changes will be documented in this file.
   none, and removed when a lease arrives.
 - Site Network Config → SSH is documented as not applied by design: the agent
   leaves dropbear alone.
+- Site time zone: the agent sets OpenWrt's system time zone from the site
+  time zone the controller sends at every connect and when the site's time
+  settings are saved, as a UTC offset with the site's daylight-saving rules
+  (for example `<+0530>-5:30`, or `<+00>0<+01>-1,M3.5.0/1,M10.5.0` for London).
+  `OMADA_CAP_TIMEZONE=false` turns it off.
 - Device Config → Services → LLDP: when `lldpd` is installed the agent
   advertises LLDP support, runs LLDP (only LLDP, not CDP/FDP/SONMP/EDP) on the
   LAN bridge's wired ports while the controller has it on (without the
