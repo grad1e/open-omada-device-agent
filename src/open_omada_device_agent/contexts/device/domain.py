@@ -23,6 +23,13 @@ class NetworkCheckRequest:
     packet_size: int | None = None
 
 
+@dataclass(frozen=True)
+class LldpConfig:
+    """SET key ``lldp``: the controller resolves the per-AP/site setting to on or off."""
+
+    enabled: bool = False
+
+
 # SNMPv3 enums used by the controller UI (Config -> Services -> SNMP).
 SNMP_SECURITY_LEVELS = {0: "noAuthNoPriv", 1: "authNoPriv", 2: "authPriv"}
 SNMP_AUTH_MODES = {1: "MD5", 2: "SHA"}

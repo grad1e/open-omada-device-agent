@@ -206,10 +206,13 @@ class GenericOpenWrtAccessPointProfile:
         """Device capabilities in the shape real EAPs send at adoption.
 
         Only what the hardware has: antenna count, supported wireless modes and
-        OFDMA per band. Features this agent does not implement (PPSK, 802.11r,
-        LLDP, mesh, ...) are left out, so the controller does not offer them.
+        OFDMA per band, plus the features the agent implements (LLDP). Features
+        it does not implement (PPSK, 802.11r, mesh, ...) are left out, so the
+        controller does not offer them.
         """
         cap: dict[str, Any] = {"meshChainNum": 0}
+        if self._capabilities.supports_lldp:
+            cap["supportLldp"] = 1
         ofdma = 0
         for band in self._capabilities.radio_bands:
             suffix = DEV_CAP_SUFFIX_BY_BAND.get(band)

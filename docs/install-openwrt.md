@@ -102,8 +102,8 @@ SSH asks for the AP's root password once. If you reset this AP before, first
 remove its old SSH key with `ssh-keygen -R 192.168.10.2`.
 
 The script installs `python3`, `python3-dotenv` and `python3-psutil` (plus
-`snmpd`, `opennds`, `dnsmasq-full` and `conntrack` for SNMP and the captive
-portal), copies the agent to `/root/open-omada-device-agent`, copies `.env.ap`
+`snmpd`, `lldpd`, `opennds`, `dnsmasq-full` and `conntrack` for SNMP, LLDP and
+the captive portal), copies the agent to `/root/open-omada-device-agent`, copies `.env.ap`
 there as `.env`, installs the `open-omada-agent` boot service and starts it.
 The AP needs internet access for the packages. openNDS stays off until the
 controller configures a portal.
@@ -163,7 +163,7 @@ scripts/deploy-openwrt.sh --host root@192.168.10.2
 ```
 
 It installs the packages the agent uses (`python3`, `python3-dotenv`,
-`python3-psutil`, `snmpd`, `opennds`, `dnsmasq-full`, `conntrack`) with `apk`
+`python3-psutil`, `snmpd`, `lldpd`, `opennds`, `dnsmasq-full`, `conntrack`) with `apk`
 or `opkg`; pass `--no-packages` to skip that. It syncs the source tree with
 `tar` over SSH and keeps the AP's `.env` unless you pass `--env FILE`. It
 writes the `/usr/bin/open-omada-agent` launcher, installs and enables the

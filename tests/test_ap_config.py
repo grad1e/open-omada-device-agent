@@ -241,12 +241,13 @@ def test_parse_initial_controller_defaults_as_passive_config():
     assert update.passive_keys == (
         "ipGroup",
         "ipv6Group",
-        "lldp",
         "logSetting",
         "macFilterGlobal",
         "schedulerGlobal",
         "ssh",
     )
+    # LLDP is applied by its own command port.
+    assert update.lldp is not None and update.lldp.enabled
     # SNMP is applied by its own command port (snmpd stays off here).
     assert update.snmp is not None and not update.snmp.enabled
     # IP Settings has its own command port (opt-in with OMADA_CAP_IP_SETTINGS).
