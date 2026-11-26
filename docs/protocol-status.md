@@ -14,7 +14,7 @@ identifiers.
 | System negotiation | ✅ | Config/version metadata consumed |
 | Initial sync result | ✅ | ACK validated |
 | Inform | 🟡 | `upTime` as `"<days> days HH:MM:SS"` and `lanInfo.rate` as an integer string (Validated: lab, no controller errors); clients without `rssi` are left out until hostapd reports one. Device, wired LAN, active hostapd clients enriched with DHCP/openNDS metadata, portal auth clients, hostapd station metrics, OpenWrt `wSettings_*`, `ssidStats_*`, and aggregate `radioTraffic_*` when `ubus` is available |
-| SET | 🟡 | Envelope/version ACKs plus parsed AP domains; unsupported keys return local error instead of fake success; common controller defaults such as `ssh`, `snmp`, `lldp`, `ipGroup`, `ipv6Group`, `lanSetting`, `logSetting`, and scheduler/mac-filter globals are accepted as passive when they do not require OpenWrt changes |
+| SET | 🟡 | Envelope/version ACKs plus parsed AP domains; one-off commands without a version (`rogueApScan`) keep the current version; unsupported keys return local error instead of fake success; common controller defaults such as `ssh`, `snmp`, `lldp`, `ipGroup`, `ipv6Group`, `lanSetting`, `logSetting`, and scheduler/mac-filter globals are accepted as passive when they do not require OpenWrt changes |
 | WLAN/radio config | 🟡 | OpenWrt UCI adapter for basic radios and PSK SSIDs. `chanWidth` enum codes map to `htmode` (Observed: 2=20, 3=40, 4=20/40, 5=80, 6=20/40/80, 7=160 MHz); Auto channel uses ACS limited to `channelRange` and usable channels; `OMADA_WIFI_COUNTRY` sets the country (the controller sends none) |
 | SSID VLAN config | 🟡 | Opt-in UCI network interface mapping; dynamic VLAN/Option82 remain rejected unless implemented |
 | Management VLAN config | 🟡 | Opt-in UCI device remapping via explicit local target variables |
@@ -31,6 +31,7 @@ identifiers.
 | SSID telemetry | 🟡 | `ssidStats_*.id` is the controller SSID id (uci `openomada_ssid_id`), `-1` for SSIDs it does not manage (Validated: lab); OpenWrt SSID/client counts, BSSID in Omada MAC format, optional interface counters, and hostapd traffic counters |
 | Client telemetry | 🟡 | Active hostapd station RSSI/SNR/rate/traffic enriched with DHCP IP/hostname and openNDS portal state; stale DHCP/openNDS-only clients are filtered out |
 | Captive portal | 🟡 | openNDS enforcement, free-policy walled garden, TP-Link EAP External Portal query redirects, `clientConfig.unauth`, and client-state reporting are available on OpenWrt; hosted portal UI and Controller `/hotspot/extPortal/auth` submission are external to the agent |
+| Rogue AP / interference scan | 🟡 | `rogueApScan` runs `iw dev <ap> scan ap-force` per band in the background; the next inform carries `rogueApList` (`mac`, `ssid`, `rid`, `ch`, `sec`, `bcn`, `signal`, `pm`, using the controller's security and phy-mode codes; own BSSIDs left out). Sent once: a repeated list makes the controller log `monitorScanStatusImageEnum is null`. Validated: lab, Statistics → Interference Detection lists both bands. `rogueApGlobal`/`rogueApSetting` are passive; no periodic background scan, no `bandWidth` |
 | Mesh | 🚧 | Not implemented |
 | Switch profile | 🚧 | Not implemented |
 | Gateway profile | 🚧 | Not implemented |

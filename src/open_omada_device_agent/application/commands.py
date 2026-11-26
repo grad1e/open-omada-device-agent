@@ -23,6 +23,7 @@ class ApplyDeviceConfigurationCommand:
     client_configs: tuple[ClientAuthConfig, ...] = ()
     client_operations: tuple[ClientControlOperation, ...] = ()
     client_rate_config: ClientRateConfig | None = None
+    rogue_ap_scan: bool = False
     passive_keys: tuple[str, ...] = ()
     ack_only_keys: tuple[str, ...] = ()
     unhandled_keys: tuple[str, ...] = ()

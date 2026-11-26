@@ -549,3 +549,18 @@ def test_apply_config_update_rejects_unhandled_keys_without_fake_ack():
     update = parse_config_body({"unsupportedCommand": {"enabled": True}})
 
     assert _apply_config_update(update, services=build_runtime(AgentSettings.from_environment())) == CONFIG_ERROR
+
+
+def test_set_response_keeps_version_for_one_off_commands():
+    # Controller 6.3.0.111 sends Interference Detection "Scan" as
+    # {"sequenceId": n, "rogueApScan": {...}} with no version at all.
+    request = {
+        "header": {"seq": 90, "type": 4096},
+        "body": {"sequenceId": 3, "rogueApScan": {"type": 0}},
+    }
+
+    assert _set_response_body(request, current_config_version=15) == {
+        "sequenceId": 3,
+        "errcode": 0,
+        "configVersion": 15,
+    }

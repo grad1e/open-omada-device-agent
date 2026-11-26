@@ -158,6 +158,9 @@ def _set_response_body(
     * ``configVersion`` for a full/absolute configuration;
     * ``configVersionInc`` for an incremental setting change.
 
+    One-off commands (``rogueApScan``) carry neither and keep the current
+    version.
+
     The latter is what Controller 6.2 sends for small live changes such as the
     AP locate LED.  The request does not contain the resulting absolute version,
     so the device derives it from the version it has already applied.
@@ -188,6 +191,10 @@ def _set_response_body(
                 f"SET_REQUEST has invalid negative configVersionInc={increment}"
             )
         applied_version = int(current_config_version) + increment
+    elif current_config_version is not None:
+        # One-off commands such as ``rogueApScan`` carry no version: they
+        # leave the configuration version unchanged.
+        applied_version = int(current_config_version)
     else:
         raise RuntimeError(
             "SET_REQUEST has neither configVersion nor configVersionInc"

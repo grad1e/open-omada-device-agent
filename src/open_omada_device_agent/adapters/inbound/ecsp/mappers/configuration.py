@@ -57,6 +57,10 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
 # carried by the same SET_REQUEST.
 PASSIVE_CONFIG_KEYS = {
     *CONTROL_PLANE_PASSIVE_CONFIG_KEYS,
+    # Rogue AP detection switch and the trusted-AP list: the controller does
+    # the classification itself from ``rogueApList``.
+    "rogueApGlobal",
+    "rogueApSetting",
     "schedulerAssoc",
     "wirelessAdv_2G",
     "wirelessAdv_5G",
@@ -75,6 +79,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | PASSIVE_CONFIG_KEYS | {
     "managementVlan",
     "portalConfigList",
     "portalFreePolicyConfig",
+    "rogueApScan",
     "wifiControlLed",
 }
 
@@ -164,6 +169,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         client_configs=client_configs,
         client_operations=tuple(client_operations),
         client_rate_config=client_rate_config,
+        rogue_ap_scan=body.get("rogueApScan") is not None,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
         unhandled_keys=unhandled,

@@ -56,4 +56,8 @@ def ap_components_v2(
         components["mVlan"] = "1.0"
     if capabilities.supports_client_rate_limits:
         components["clientRateLimit"] = "1.0"
+    if capabilities.supports_rogue_ap_scan:
+        # Controller 6.3.0.111 model templates list rogueAp=3.0 and
+        # rogueApInform=2.0 for the EAP650; results travel in ``rogueApList``.
+        components.update({"rogueAp": "3.0", "rogueApInform": "2.0"})
     return components

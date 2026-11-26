@@ -10,6 +10,7 @@ from ..adapters.outbound.openwrt.device_commands import OpenWrtClientControlAdap
 from ..adapters.outbound.openwrt.uci import OpenWrtUciAdapter
 from ..adapters.outbound.openwrt.capabilities import detect_platform_capabilities
 from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
+from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
 from ..adapters.outbound.openwrt.client_observations import (
     client_stats_payload,
     clients_from_dhcp_leases,
@@ -74,6 +75,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             "; ".join(bootstrap_result.warnings),
         )
     wireless_telemetry = OpenWrtWirelessTelemetry()
+    rogue_ap_scanner = OpenWrtRogueApScanner()
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
@@ -112,6 +114,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                     block_interface=settings.client_block_interface,
                     rate_limit_interface=settings.client_rate_limit_interface,
                 ),
+                rogue_ap_scanner,
             ),
             allow_ack_only_config=settings.lab_ack_control_plane_config,
         ),
@@ -128,6 +131,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 capabilities=capabilities,
                 telemetry=wireless_telemetry,
             ),
+            rogue_aps=rogue_ap_scanner.inform_items,
         ),
         state_repository=JsonSessionStateRepository(
             settings.state_file,

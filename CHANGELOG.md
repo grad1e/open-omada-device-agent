@@ -6,6 +6,13 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Interference Detection scan: the controller's "Scan" button (SET key
+  `rogueApScan`) runs `iw dev <ap> scan ap-force` on each band in the
+  background, and the next inform reports the neighbour APs in `rogueApList`
+  (BSSID, SSID, channel, security, beacon interval, signal, Wi-Fi mode). The
+  agent advertises the `rogueAp`/`rogueApInform` components when `iw` can
+  scan; `OMADA_CAP_ROGUE_AP_SCAN=false` turns it off. `rogueApGlobal` and
+  `rogueApSetting` are accepted without local changes.
 - Adoption sends `devCap` with antenna count (`mimo2G`/`mimo5G`), supported
   wireless modes and OFDMA bands, using the bitmask values of real EAPs of the
   same Wi-Fi generation.
@@ -44,6 +51,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- A `SET_REQUEST` without `configVersion`/`configVersionInc` (one-off commands
+  such as `rogueApScan`) keeps the current version. It used to drop the
+  managed session, which then re-adopted.
 - `--once` exits after one discovery/adoption cycle again; the Forget
   recovery loop kept restarting discovery.
 - After an agent restart, stopping Locate no longer turns the LED off: the

@@ -83,3 +83,22 @@ def test_clients_without_a_signal_reading_are_left_out():
 
     assert body["clients"] == [{"mac": "aa:bb:cc:dd:ee:ff"}]
     assert [client.mac for client in projected] == ["aa:bb:cc:dd:ee:ff"]
+
+
+def _assembler(rogue_aps=None):
+    return InformAssembler(
+        device_info=lambda: {"name": "ap"},
+        lan=LanObservation(rate=100.0, duplex=1, port="LAN"),
+        clients=lambda: (),
+        client_projection=lambda clients: [],
+        wireless_projection=lambda: {},
+        rogue_aps=rogue_aps,
+    )
+
+
+def test_inform_assembler_adds_rogue_ap_list_only_when_present():
+    item = {"mac": "00-00-5E-00-53-01", "ssid": "n", "rid": 0, "ch": 1, "sec": 10, "pm": 7}
+
+    assert "rogueApList" not in _assembler().build(need_reply=False, uptime=1)
+    assert "rogueApList" not in _assembler(lambda: []).build(need_reply=False, uptime=1)
+    assert _assembler(lambda: [item]).build(need_reply=False, uptime=1)["rogueApList"] == [item]

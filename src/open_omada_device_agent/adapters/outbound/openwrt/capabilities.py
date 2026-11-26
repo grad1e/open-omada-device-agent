@@ -96,6 +96,12 @@ def detect_platform_capabilities(
             openwrt and has_ubus,
         ),
         supports_client_rate_limits=_feature(values, "OMADA_CAP_CLIENT_RATE_LIMITS", False),
+        # ``iw dev <ap> scan ap-force`` works when iw reports the radios.
+        supports_rogue_ap_scan=_feature(
+            values,
+            "OMADA_CAP_ROGUE_AP_SCAN",
+            openwrt and bool(radio_hardware),
+        ),
         radio_hardware=radio_hardware,
     )
 
@@ -118,6 +124,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_led_control",
         "supports_client_operations",
         "supports_client_rate_limits",
+        "supports_rogue_ap_scan",
     ):
         if getattr(capabilities, field):
             enabled.append(field.removeprefix("supports_"))
