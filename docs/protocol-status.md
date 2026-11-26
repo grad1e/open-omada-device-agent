@@ -1,5 +1,58 @@
 # Protocol Support Matrix
 
+## Features at a glance
+
+The reference implementation targets the ECSP V2 family. It was first built
+against Omada Network Application `6.2.14.11` with an EAP110 v4-compatible AP
+profile, and has since been validated against Controller `6.3.0.111` with a
+dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
+(`OMADA_DEVICE_MODEL`, see the
+[configuration reference](configuration.md#device-identity)).
+
+| Area | Status |
+| --- | --- |
+| UDP discovery / site-scoped discovery | ✅ Working |
+| `PRE_ADOPT_REQUEST` handling | ✅ Working |
+| TLS management channel | ✅ Working |
+| Legacy V2 mutual Device Account verification | ✅ Working |
+| Device/system negotiation | ✅ Working |
+| Initial sync | ✅ Working |
+| Managed state persistence | ✅ Working |
+| Restart without another manual Adopt | ✅ Working |
+| Managed rediscovery / stale-context recovery | ✅ Working |
+| Periodic device informs | ✅ Working; telemetry in the formats Controller 6.3 parses |
+| Device IP shown in the controller | ✅ `OMADA_DEVICE_IP=local` reports the address used to reach the controller (IPv4 or IPv6) |
+| Radio capability advertisement | ✅ From `iw list`: channels, widths up to 160 MHz, antennas, wireless modes; DFS channels when the regulatory domain supports radar detection |
+| `SET_REQUEST` acknowledgement | 🟡 Partial; rejects unsupported keys |
+| Max clients, RSSI threshold, U-APSD | 🟡 Per radio from Wireless → Advanced; OFDMA is always on (checkbox hidden; OpenWrt has no switch for it) |
+| Network Check (Tools) | 🟡 Ping, Traceroute, DNS Lookup and ARP Table run on the AP with BusyBox; output streams into the controller's Device Output |
+| IP Settings (opt-in) | 🟡 DHCP or static LAN address, gateway and DNS, with automatic rollback if the controller becomes unreachable; enable with `OMADA_CAP_IP_SETTINGS=true` |
+| SNMP (Services) | 🟡 Location, Contact, v1/v2c community and a read-only SNMPv3 user written to OpenWrt's `snmpd`; snmpd runs only while SNMP is on |
+| Interference Detection scan | 🟡 On-demand neighbour scan with `iw`; shows in Statistics → Interference Detection |
+| Radio/SSID configuration | 🟡 OpenWrt UCI adapter: SSIDs, wireless mode, channel, width (20–160 MHz), Tx power up to the radio's limit, Auto channel range, Wi-Fi country (`OMADA_WIFI_COUNTRY`) |
+| SSID VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
+| Management VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
+| Client IP/name reporting | 🟡 hostapd association is the source of truth; IPs and names come from DHCP leases, openNDS and passive DHCP/ARP/NDP/mDNS listening on the bridges |
+| OpenWrt radio/SSID telemetry | 🟡 Live channel, width and mode, per-SSID stats and channel utilisation via `ubus`, hostapd and `iw` |
+| Client operations and rate limits | 🟡 Optional `ubus`/nftables adapters |
+| LED enable/disable/locate | 🟡 Optional sysfs adapter; state survives Locate and agent restarts |
+| FORGET / forget-no-reset response | ✅ Working |
+| Captive portal sessions/enforcement | 🟡 openNDS on a routed guest network; controller built-in portal and External Portal redirects, free-policy walled garden, session length and client auth state are wired; guest logout is not |
+| Portal RADIUS authentication | 🟡 Library support; not wired to HTTP portal flow |
+| `GET_REQUEST` | 🟡 Defensive unsupported-key responses |
+| Notify families | 🟡 Defensive unsupported replies |
+| Report family | 🚧 Envelope and protobuf DTOs identified; `reportData` serializer not implemented |
+| Switch/gateway/OLT device profiles | 🚧 Planned |
+
+The capability table is intentionally conservative. The agent advertises only
+components whose lifecycle is currently understood well enough not to mislead
+the controller. On OpenWrt, `OMADA_MAX_SSIDS` is treated as a manual upper
+bound; when `iw list` reports no valid multi-interface combinations, the agent
+caps the advertised and applied SSID count to one AP interface so hostapd does
+not fail the whole radio.
+
+## By message family
+
 This table tracks **implementation status**, not merely known numeric message
 identifiers.
 

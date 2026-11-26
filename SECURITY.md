@@ -41,7 +41,7 @@ cut the AP off from the controller if they are wrong:
   reaches the controller from it.
 - **Captive portal** (openNDS) intercepts traffic on its bridge. The agent
   refuses to run it on the bridge that carries the uplink; use a routed guest
-  network (see the README).
+  network (see [docs/captive-portal.md](docs/captive-portal.md)).
 - **SNMP** writes communities and SNMPv3 credentials from the controller to
   `/etc/config/snmpd` on the AP.
 
