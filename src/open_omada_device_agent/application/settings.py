@@ -67,6 +67,7 @@ class AgentSettings:
     device_cipher_type: int
     state_file: Path
     capability_environment: tuple[tuple[str, str], ...]
+    client_snoop_interfaces: str = "auto"
 
     def validate(self) -> None:
         if not self.controller_host:

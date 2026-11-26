@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Client IP addresses and names on a bridge-only AP: the agent listens
+  (receive only) on its bridges and learns each Wi-Fi client's IPv4, IPv6 and
+  host name from DHCP requests, ARP, IPv6 neighbour discovery and mDNS. A
+  kernel BPF filter passes only those packets. Learned details only enrich
+  clients hostapd reports as associated. `OMADA_CLIENT_SNOOP_INTERFACES`
+  (default `auto`, every bridge) picks the bridges or turns it `off`.
 - Interference Detection scan: the controller's "Scan" button (SET key
   `rogueApScan`) runs `iw dev <ap> scan ap-force` on each band in the
   background, and the next inform reports the neighbour APs in `rogueApList`

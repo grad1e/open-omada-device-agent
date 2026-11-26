@@ -37,6 +37,7 @@ class AgentSettings(RuntimeAgentSettings):
             lan_duplex=config.LAN_DUPLEX,
             lan_port=config.LAN_PORT,
             dhcp_lease_file=Path(config.DHCP_LEASE_FILE),
+            client_snoop_interfaces=config.CLIENT_SNOOP_INTERFACES,
             led_brightness_path=config.LED_BRIGHTNESS_PATH,
             led_on_value=config.LED_ON_VALUE,
             led_off_value=config.LED_OFF_VALUE,

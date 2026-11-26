@@ -67,6 +67,11 @@ LAN_PORT = os.getenv("OMADA_LAN_PORT", "LAN")
 # omit client entries.
 DHCP_LEASE_FILE = os.getenv("OMADA_DHCP_LEASE_FILE", "/tmp/dhcp.leases").strip()
 
+# Passive client address/name learning on the AP's bridges (DHCP, ARP, IPv6
+# neighbour discovery, mDNS). "auto" listens on every bridge, "off" disables
+# it, or give a comma-separated interface list.
+CLIENT_SNOOP_INTERFACES = os.getenv("OMADA_CLIENT_SNOOP_INTERFACES", "auto").strip()
+
 # Optional Linux/OpenWrt sysfs LED control. Leave unset unless the operator has
 # mapped a real AP status LED brightness file.
 LED_BRIGHTNESS_PATH = os.getenv("OMADA_LED_BRIGHTNESS_PATH", "").strip()

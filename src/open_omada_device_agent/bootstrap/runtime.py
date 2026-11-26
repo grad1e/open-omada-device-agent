@@ -11,6 +11,7 @@ from ..adapters.outbound.openwrt.uci import OpenWrtUciAdapter
 from ..adapters.outbound.openwrt.capabilities import detect_platform_capabilities
 from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
+from ..adapters.outbound.openwrt.client_snoop import BridgeClientSnooper
 from ..adapters.outbound.openwrt.client_observations import (
     client_stats_payload,
     clients_from_dhcp_leases,
@@ -77,6 +78,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         )
     wireless_telemetry = OpenWrtWirelessTelemetry()
     rogue_ap_scanner = OpenWrtRogueApScanner()
+    client_snooper = BridgeClientSnooper(settings.client_snoop_interfaces)
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
@@ -125,6 +127,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             lan=LanObservation(settings.lan_rate, settings.lan_duplex, settings.lan_port),
             clients=lambda: merge_associated_wireless_client_states(
                 collect_openwrt_wireless_clients(capabilities=capabilities),
+                client_snooper.clients(),
                 clients_from_dhcp_leases(load_dnsmasq_leases(settings.dhcp_lease_file)),
                 collect_opennds_clients(capabilities=capabilities),
             ),

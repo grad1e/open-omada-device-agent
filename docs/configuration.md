@@ -280,6 +280,14 @@ seconds, and query values use form encoding (`+` for spaces).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OMADA_DHCP_LEASE_FILE` | `/tmp/dhcp.leases` | dnsmasq lease file used to report real IP/hostname client data |
+| `OMADA_CLIENT_SNOOP_INTERFACES` | `auto` | Bridges to listen on for client IPs and names (`auto` = every bridge, `off` disables, or a comma-separated list) |
+
+A bridge-only AP has no leases of its own, so the agent also listens (receive
+only) on its bridges. A kernel filter passes just DHCP, ARP, IPv6 neighbour
+discovery and mDNS packets; from those it learns each client's IPv4 and IPv6
+addresses and its DHCP host name (or mDNS `.local` name). Addresses age out
+after an hour without traffic, names after a day. A client that was already
+connected shows its name after its next DHCP renewal or reconnect.
 
 If the lease file is absent, DHCP enrichment is skipped. DHCP leases and
 openNDS sessions are metadata sources only: production inform reports a client

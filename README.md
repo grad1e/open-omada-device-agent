@@ -45,7 +45,7 @@ dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
 | Radio/SSID configuration | 🟡 OpenWrt UCI adapter: SSIDs, wireless mode, channel, width (20–160 MHz), Tx power up to the radio's limit, Auto channel range, Wi-Fi country (`OMADA_WIFI_COUNTRY`) |
 | SSID VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
 | Management VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
-| DHCP lease, openNDS and hostapd client reporting | 🟡 Partial; hostapd association is source of truth |
+| Client IP/name reporting | 🟡 hostapd association is the source of truth; IPs and names come from DHCP leases, openNDS and passive DHCP/ARP/NDP/mDNS listening on the bridges |
 | OpenWrt radio/SSID telemetry | 🟡 Live channel, width and mode, per-SSID stats and channel utilisation via `ubus`, hostapd and `iw` |
 | Client operations and rate limits | 🟡 Optional `ubus`/nftables adapters |
 | LED enable/disable/locate | 🟡 Optional sysfs adapter; state survives Locate and agent restarts |
