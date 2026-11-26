@@ -40,9 +40,89 @@ MANAGED_RECONNECT_ATTEMPTS = _int("OMADA_MANAGED_RECONNECT_ATTEMPTS", 3)
 TLS_VERIFY = _bool("OMADA_TLS_VERIFY", False)
 TLS_CA_FILE = os.getenv("OMADA_TLS_CA_FILE", "").strip()
 
+PLACEHOLDER_MAC = "02:00:00:00:00:01"
+DEVICE_MAC_FILE = Path(os.getenv("OMADA_DEVICE_MAC_FILE", ".omada-device-mac"))
+RANDOM_MAC = "1"  # /sys/class/net/<if>/addr_assign_type: NET_ADDR_RANDOM
+
+
+def _valid_mac(value: str) -> str | None:
+    mac = value.strip().lower()
+    parts = mac.split(":")
+    if len(parts) != 6 or any(len(p) != 2 for p in parts) or mac == "00:00:00:00:00:00":
+        return None
+    try:
+        bytes.fromhex("".join(parts))
+    except ValueError:
+        return None
+    return mac
+
+
+def interface_mac(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> str | None:
+    """MAC address of ``interface``, or None when it has none we can use."""
+    try:
+        return _valid_mac((sys_class_net / interface / "address").read_text())
+    except OSError:
+        return None
+
+
+def mac_is_random(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> bool:
+    """True when the kernel generated ``interface``'s MAC (it changes every boot).
+
+    A bridge copies its MAC from a port, so the ports are checked too.
+    """
+    names = [interface]
+    try:
+        names += [p.name for p in (sys_class_net / interface / "brif").iterdir()]
+    except OSError:
+        pass
+    mac = interface_mac(interface, sys_class_net)
+    for name in names:
+        try:
+            kind = (sys_class_net / name / "addr_assign_type").read_text().strip()
+        except OSError:
+            continue
+        if kind == RANDOM_MAC and interface_mac(name, sys_class_net) == mac:
+            return True
+    return False
+
+
+def default_device_mac(
+    env: dict[str, str] | None = None,
+    sys_class_net: Path = Path("/sys/class/net"),
+    mac_file: Path | None = None,
+) -> str:
+    """OMADA_DEVICE_MAC, else the remembered MAC, else the LAN bridge MAC.
+
+    The bridge MAC is the one the AP's DHCP client uses, so a controller
+    "Use Fixed IP Address" reservation for the AP matches its DHCP requests.
+    The first MAC picked is saved to ``mac_file`` so the AP keeps its identity
+    even on hardware whose MAC changes at every boot.
+    """
+    env = os.environ if env is None else env
+    configured = env.get("OMADA_DEVICE_MAC", "").strip()
+    if configured:
+        return configured
+    mac_file = DEVICE_MAC_FILE if mac_file is None else mac_file
+    try:
+        remembered = _valid_mac(mac_file.read_text())
+    except OSError:
+        remembered = None
+    if remembered:
+        return remembered
+    bridge = env.get("OMADA_OPENWRT_LAN_BRIDGE", "br-lan").strip() or "br-lan"
+    mac = interface_mac(bridge, sys_class_net)
+    if mac is None:
+        return PLACEHOLDER_MAC
+    try:
+        mac_file.write_text(mac + "\n")
+    except OSError:
+        pass
+    return mac
+
+
 # Reference device identity. The current implementation has been exercised with
 # an EAP110 v4-compatible profile, but every field remains configurable.
-MAC = os.getenv("OMADA_DEVICE_MAC", "02:00:00:00:00:01")
+MAC = default_device_mac()
 DEVICE_NAME = os.getenv("OMADA_DEVICE_NAME", "OpenOmada-AP")
 MODEL = os.getenv("OMADA_DEVICE_MODEL", "EAP110")
 MODEL_VERSION = os.getenv("OMADA_DEVICE_MODEL_VERSION", "4.0")

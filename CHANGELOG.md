@@ -92,6 +92,15 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- The device MAC now defaults to the LAN bridge MAC (`br-lan`, or
+  `OMADA_OPENWRT_LAN_BRIDGE`) instead of `02:00:00:00:00:01`. A controller
+  "Use Fixed IP Address" reservation then matches the AP's DHCP requests, and
+  two unconfigured APs no longer share one MAC. The first MAC is saved to
+  `.omada-device-mac`, so an AP whose hardware picks a random MAC at every
+  boot keeps one identity; the agent warns that such an AP needs a fixed
+  `macaddr` for DHCP reservations. An AP that ran without `OMADA_DEVICE_MAC`
+  shows up as a new device after the upgrade; set
+  `OMADA_DEVICE_MAC=02:00:00:00:00:01` to keep the old identity.
 - `OMADA_DEVICE_IP` defaults to `local`: the agent advertises the address it
   uses to reach the controller (a UDP route lookup that sends no packet,
   IPv4 or IPv6), re-checked every 60 s. Previously `0.0.0.0` was shown unless the address

@@ -38,7 +38,8 @@ characters and Site IDs 24 characters.
 
 | Variable | Default |
 | --- | --- |
-| `OMADA_DEVICE_MAC` | `02:00:00:00:00:01` |
+| `OMADA_DEVICE_MAC` | MAC of `OMADA_OPENWRT_LAN_BRIDGE` (`br-lan`) at first start, then the value saved in `OMADA_DEVICE_MAC_FILE`; `02:00:00:00:00:01` when that interface is missing |
+| `OMADA_DEVICE_MAC_FILE` | `.omada-device-mac` (in the agent directory). Delete it to pick up a new bridge MAC |
 | `OMADA_DEVICE_NAME` | `OpenOmada-AP` |
 | `OMADA_DEVICE_MODEL` | `EAP110` |
 | `OMADA_DEVICE_MODEL_VERSION` | `4.0` |
@@ -331,7 +332,7 @@ semantics, not the LED brightness/locate state itself.
 The default state file is derived from the device MAC:
 
 ```text
-.omada-agent-state-020000000001.json
+.omada-agent-state-<mac without colons>.json   # e.g. ...-020000000001.json
 ```
 
 Override with `OMADA_STATE_FILE` when needed. The file is Git-ignored by

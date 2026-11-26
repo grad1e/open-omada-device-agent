@@ -24,6 +24,7 @@ from ..adapters.outbound.openwrt.client_observations import (
     merge_associated_wireless_client_states,
 )
 from ..network_tools import get_device_ip
+from ..config import mac_is_random
 from ..adapters.outbound.openwrt.device_profile import GenericOpenWrtAccessPointProfile
 from .settings import AgentSettings
 from ..projections.inform import InformAssembler, LanObservation
@@ -56,6 +57,15 @@ class AgentRuntime:
 def build_runtime(settings: AgentSettings) -> AgentRuntime:
     """Build production dependencies; tests may construct the use cases directly."""
     capabilities = detect_platform_capabilities(env=dict(settings.capability_environment))
+    if mac_is_random(settings.openwrt_lan_bridge):
+        log.warning(
+            "%s has a random MAC that changes at every boot, so a controller "
+            "\"Use Fixed IP Address\" reservation cannot match this AP. To fix it, add "
+            "option macaddr '%s' to the %s device section in /etc/config/network",
+            settings.openwrt_lan_bridge,
+            settings.mac,
+            settings.openwrt_lan_bridge,
+        )
     startup_bootstrap = OpenWrtStartupBootstrap(
         config=OpenWrtBootstrapConfig(
             enabled=settings.openwrt_bootstrap,

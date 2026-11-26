@@ -38,3 +38,5 @@ __MACOSX/
 *.cap
 *.har
 sources/
+# Device MAC remembered by the agent
+.omada-device-mac
