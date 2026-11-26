@@ -53,6 +53,7 @@ class AgentSettings:
     opennds_gateway_name: str
     openwrt_enable_wan_management: bool
     openwrt_wan_zone: str
+    wifi_country: str
     lab_ack_control_plane_config: bool
     ecsp_version: str
     ecsp_ver_cap: int
@@ -78,6 +79,10 @@ class AgentSettings:
             raise RuntimeError(
                 "OMADA_OPENWRT_LAN_INTERFACE and OMADA_OPENWRT_LAN_BRIDGE are required"
             )
+        if self.wifi_country and not (
+            len(self.wifi_country) == 2 and self.wifi_country.isalpha()
+        ):
+            raise RuntimeError("OMADA_WIFI_COUNTRY must be a two-letter country code")
         if self.openwrt_enable_wan_management and not self.openwrt_wan_zone:
             raise RuntimeError("OMADA_OPENWRT_WAN_ZONE is required")
         if self.tls_ca_file is not None and not self.tls_ca_file.exists():

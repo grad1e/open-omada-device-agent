@@ -28,12 +28,39 @@ class RadioBand(str, Enum):
     SIX_G = "6g"
 
 @dataclass(frozen=True)
+class RadioChannel:
+    """One channel the radio may use under the current regulatory domain."""
+    channel: int
+    freq: int
+    max_power: int | None = None
+    radar: bool = False
+
+@dataclass(frozen=True)
+class RadioHardware:
+    """PHY capabilities observed for one band (e.g. from ``iw list``)."""
+    band: RadioBand
+    ht40: bool = False
+    vht: bool = False
+    vht160: bool = False
+    he: bool = False
+    he160: bool = False
+    streams: int = 1
+    channels: tuple[RadioChannel, ...] = ()
+    # Radar detection (CAC) works: the regulatory domain names a DFS region.
+    # Without one ("DFS-UNSET", e.g. IN in wireless-regdb) hostapd cannot
+    # start CAC and disables the radio on any radar channel.
+    dfs: bool = False
+
+@dataclass(frozen=True)
 class RadioConfig:
     band: RadioBand
     radio_id: int | None = None
     enabled: bool | None = None
+    # Omada chanWidth enum code (e.g. 2=20 MHz, 3=40 MHz, 5=80 MHz), not MHz.
     channel_width: int | None = None
-    channel: int | None = None
+    channel: int | None = None  # 0 means Auto
+    # Frequencies (MHz) the controller allows Auto channel selection to use.
+    channel_range: tuple[int, ...] = ()
     tx_power: int | None = None
     channel_limit: bool | None = None
     wireless_mode: int | None = None

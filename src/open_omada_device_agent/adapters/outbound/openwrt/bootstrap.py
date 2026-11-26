@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ....application.contracts import PlatformCapabilities
-from .uci import CommandRunner, SubprocessRunner
+from ....contexts.wireless.domain import RadioBand
+from .uci import CommandRunner, SubprocessRunner, usable_channels
 
 
 log = logging.getLogger("open_omada.openwrt.bootstrap")
@@ -23,6 +27,7 @@ class OpenWrtBootstrapConfig:
     opennds_gateway_name: str = "OpenOmada-AP"
     enable_wan_management: bool = False
     wan_zone: str = "wan"
+    wifi_country: str = ""
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,13 @@ class OpenWrtBootstrapResult:
     changed: bool = False
     warnings: tuple[str, ...] = ()
     command_count: int = 0
+    wireless_changed: bool = False
+
+
+# How long to wait for the kernel to apply a new Wi-Fi country after
+# `wifi reload`; capabilities read earlier still show the old channel list.
+REGDOMAIN_WAIT_SECONDS = 10.0
+REGDOMAIN_POLL_SECONDS = 0.5
 
 
 class OpenWrtStartupBootstrap:
@@ -39,9 +51,11 @@ class OpenWrtStartupBootstrap:
         runner: CommandRunner | None = None,
         *,
         config: OpenWrtBootstrapConfig | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._runner = runner or SubprocessRunner()
         self._config = config or OpenWrtBootstrapConfig()
+        self._sleep = sleep
 
     def apply(self, capabilities: PlatformCapabilities) -> OpenWrtBootstrapResult:
         if not self._config.enabled or capabilities.platform != "openwrt":
@@ -68,6 +82,11 @@ class OpenWrtStartupBootstrap:
             command_count += result.command_count
             warnings.extend(result.warnings)
 
+        wifi = self._ensure_wifi_country()
+        changed = changed or wifi.changed
+        command_count += wifi.command_count
+        warnings.extend(wifi.warnings)
+
         if self._config.ensure_opennds and capabilities.has_opennds:
             result = self._ensure_opennds()
             changed = changed or result.changed
@@ -83,7 +102,120 @@ class OpenWrtStartupBootstrap:
             changed=changed,
             warnings=tuple(dict.fromkeys(warnings)),
             command_count=command_count,
+            wireless_changed=wifi.changed,
         )
+
+    def _ensure_wifi_country(self) -> OpenWrtBootstrapResult:
+        radios = self._sections_of_type("wireless", "wifi-device")
+        country = self._config.wifi_country
+        if not country:
+            missing = [r for r in radios if not self._uci_get(f"wireless.{r}.country")]
+            if not missing:
+                return OpenWrtBootstrapResult(applied=True)
+            return OpenWrtBootstrapResult(
+                applied=True,
+                warnings=(
+                    f"Wi-Fi radio(s) {', '.join(missing)} have no country code; the "
+                    "controller does not send one, so channels it picks may be refused "
+                    "and the radio may go down. Set OMADA_WIFI_COUNTRY (e.g. IN, US).",
+                ),
+            )
+        lines: list[str] = []
+        updated: list[str] = []
+        for radio in radios:
+            before = len(lines)
+            self._append_set_if_needed(lines, "wireless", radio, "country", country)
+            if len(lines) > before:
+                updated.append(radio)
+        if not lines:
+            return OpenWrtBootstrapResult(applied=True)
+        result = self._run_batch("wireless", lines)
+        if not result.changed:
+            return result
+        log.info("Set Wi-Fi country %s on %s", country, ", ".join(updated))
+        reload = self._runner.run(("wifi", "reload"))
+        warnings = () if reload.returncode == 0 else (_command_warning(("wifi", "reload"), reload),)
+        if reload.returncode == 0 and not self._wait_for_regdomain(country):
+            warnings += (
+                f"Kernel regulatory domain did not switch to {country} within "
+                f"{REGDOMAIN_WAIT_SECONDS:.0f} s; advertised channels may be stale "
+                "until the agent restarts.",
+            )
+        return OpenWrtBootstrapResult(
+            applied=True,
+            changed=True,
+            warnings=warnings,
+            command_count=result.command_count + 1,
+        )
+
+    def _wait_for_regdomain(self, country: str) -> bool:
+        """Wait until ``iw reg get`` reports ``country``.
+
+        Returns False only when iw keeps reporting another country; if iw is
+        missing or prints no country, there is nothing to wait for.
+        """
+        expected = re.compile(rf"^country {re.escape(country)}:", re.MULTILINE)
+        any_country = re.compile(r"^country \S+:", re.MULTILINE)
+        for _ in range(int(REGDOMAIN_WAIT_SECONDS / REGDOMAIN_POLL_SECONDS)):
+            result = self._runner.run(("iw", "reg", "get"))
+            if result.returncode != 0 or not any_country.search(result.stdout or ""):
+                return True
+            if expected.search(result.stdout):
+                return True
+            self._sleep(REGDOMAIN_POLL_SECONDS)
+        return False
+
+    def prune_auto_channels(self, capabilities: PlatformCapabilities) -> OpenWrtBootstrapResult:
+        """Drop channels the radio can no longer use from each Auto channel list.
+
+        ``wireless.radioX.channels`` limits OpenWrt ACS. A list saved under
+        another country or DFS state can make ACS pick a channel hostapd
+        refuses (e.g. a radar channel under DFS-UNSET), taking the radio down.
+        """
+        if not self._config.enabled or capabilities.platform != "openwrt" or not capabilities.has_uci:
+            return OpenWrtBootstrapResult(applied=True)
+        lines: list[str] = []
+        pruned: list[str] = []
+        for radio in self._sections_of_type("wireless", "wifi-device"):
+            current = self._uci_get(f"wireless.{radio}.channels").split()
+            try:
+                band = RadioBand(self._uci_get(f"wireless.{radio}.band"))
+            except ValueError:
+                continue
+            usable = usable_channels(capabilities, band)
+            if not current or not usable:
+                continue
+            kept = [ch for ch in current if ch.isdigit() and int(ch) in usable]
+            if kept == current:
+                continue
+            value = " ".join(kept) if kept else " ".join(map(str, usable))
+            lines.append(f"set wireless.{radio}.channels='{_uci_quote(value)}'")
+            pruned.append(f"{radio} -> {value}")
+        if not lines:
+            return OpenWrtBootstrapResult(applied=True)
+        result = self._run_batch("wireless", lines)
+        if not result.changed:
+            return result
+        log.info("Removed unusable Auto channels: %s", "; ".join(pruned))
+        reload = self._runner.run(("wifi", "reload"))
+        warnings = () if reload.returncode == 0 else (_command_warning(("wifi", "reload"), reload),)
+        return OpenWrtBootstrapResult(
+            applied=True,
+            changed=True,
+            warnings=warnings,
+            command_count=result.command_count + 1,
+        )
+
+    def _sections_of_type(self, config: str, section_type: str) -> list[str]:
+        result = self._runner.run(("uci", "-q", "show", config))
+        if result.returncode != 0:
+            return []
+        suffix = f"={section_type}"
+        return [
+            line[len(config) + 1 : -len(suffix)]
+            for line in result.stdout.splitlines()
+            if line.startswith(f"{config}.") and line.endswith(suffix) and line.count(".") == 1
+        ]
 
     def _ensure_lan_bridge(self) -> OpenWrtBootstrapResult:
         bridge = self._config.lan_bridge

@@ -176,11 +176,23 @@ def _parse_radio_config(band: RadioBand, raw: Any) -> RadioConfig:
         enabled=_optional_bool(data.get("radioEnable")),
         channel_width=_optional_int(data.get("chanWidth")),
         channel=_optional_int(data.get("channel")),
+        channel_range=_frequency_list(data.get("channelRange")),
         tx_power=_optional_int(data.get("txPower")),
         channel_limit=_optional_bool(data.get("channelLimit")),
         wireless_mode=_optional_int(data.get("wirelessMode")),
         raw=dict(data),
     )
+
+
+def _frequency_list(raw: Any) -> tuple[int, ...]:
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    values = []
+    for item in raw:
+        value = _optional_int(item)
+        if value is not None and value > 0:
+            values.append(value)
+    return tuple(values)
 
 
 def _parse_ssid_config(band: RadioBand, raw: Any) -> tuple[WirelessNetwork, ...]:

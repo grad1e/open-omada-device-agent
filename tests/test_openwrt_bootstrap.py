@@ -216,3 +216,178 @@ def test_bootstrap_noops_outside_openwrt():
 
     assert result.changed is False
     assert runner.calls == []
+
+
+WIRELESS_SHOW = CommandResult(
+    returncode=0,
+    stdout=(
+        "wireless.radio0=wifi-device\n"
+        "wireless.radio0.band='2g'\n"
+        "wireless.radio1=wifi-device\n"
+        "wireless.radio1.band='5g'\n"
+        "wireless.default_radio0=wifi-iface\n"
+    ),
+)
+
+
+def _wifi_only(**overrides):
+    return OpenWrtBootstrapConfig(ensure_lan=False, ensure_opennds=False, **overrides)
+
+
+def test_bootstrap_sets_wifi_country_on_every_radio_and_reloads_wifi(caplog):
+    caplog.set_level("INFO")
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "show", "wireless"): WIRELESS_SHOW,
+            ("uci", "-q", "get", "wireless.radio1.country"): CommandResult(
+                returncode=0, stdout="IN\n"
+            ),
+        }
+    )
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only(wifi_country="IN")).apply(
+        _caps()
+    )
+
+    assert result.changed is True
+    assert result.wireless_changed is True
+    batch = _batch_payloads(runner)[0]
+    assert "set wireless.radio0.country='IN'" in batch
+    assert "radio1" not in batch  # already correct
+    assert "Set Wi-Fi country IN on radio0" in caplog.text
+    assert "radio0, radio1" not in caplog.text
+    assert "commit wireless" in batch
+    assert (("wifi", "reload"), None) in runner.calls
+
+
+def test_bootstrap_leaves_matching_wifi_country_alone():
+    current = CommandResult(returncode=0, stdout="IN\n")
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "show", "wireless"): WIRELESS_SHOW,
+            ("uci", "-q", "get", "wireless.radio0.country"): current,
+            ("uci", "-q", "get", "wireless.radio1.country"): current,
+        }
+    )
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only(wifi_country="IN")).apply(
+        _caps()
+    )
+
+    assert result.changed is False
+    assert result.wireless_changed is False
+    assert _batch_payloads(runner) == []
+    assert (("wifi", "reload"), None) not in runner.calls
+
+
+def test_bootstrap_warns_when_radios_have_no_country_and_none_is_configured():
+    runner = BootstrapRunner(responses={("uci", "-q", "show", "wireless"): WIRELESS_SHOW})
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only()).apply(_caps())
+
+    assert result.changed is False
+    assert _batch_payloads(runner) == []
+    assert any(
+        "radio0, radio1 have no country code" in warning and "OMADA_WIFI_COUNTRY" in warning
+        for warning in result.warnings
+    )
+
+
+@dataclass
+class _RegdomainRunner(BootstrapRunner):
+    reg_outputs: list[str] = field(default_factory=list)
+
+    def run(self, args, *, input_text=None):
+        if tuple(args) == ("iw", "reg", "get"):
+            self.calls.append((tuple(args), input_text))
+            stdout = self.reg_outputs.pop(0) if len(self.reg_outputs) > 1 else self.reg_outputs[0]
+            return CommandResult(returncode=0, stdout=stdout)
+        return super().run(args, input_text=input_text)
+
+
+def test_bootstrap_waits_for_the_kernel_to_apply_the_new_country():
+    runner = _RegdomainRunner(
+        responses={("uci", "-q", "show", "wireless"): WIRELESS_SHOW},
+        reg_outputs=["global\ncountry IN: DFS-UNSET\n"] * 3 + ["global\ncountry PA: DFS-FCC\n"],
+    )
+    sleeps = []
+
+    result = OpenWrtStartupBootstrap(
+        runner, config=_wifi_only(wifi_country="PA"), sleep=sleeps.append
+    ).apply(_caps())
+
+    assert result.wireless_changed is True
+    assert len(sleeps) == 3
+    assert result.warnings == ()
+
+
+def test_bootstrap_warns_when_the_country_never_applies():
+    runner = _RegdomainRunner(
+        responses={("uci", "-q", "show", "wireless"): WIRELESS_SHOW},
+        reg_outputs=["global\ncountry IN: DFS-UNSET\n"],
+    )
+
+    result = OpenWrtStartupBootstrap(
+        runner, config=_wifi_only(wifi_country="PA"), sleep=lambda _s: None
+    ).apply(_caps())
+
+    assert any("did not switch to PA" in w for w in result.warnings)
+
+
+def _prune_caps():
+    from open_omada_device_agent.contexts.wireless.domain import (
+        RadioBand,
+        RadioChannel,
+        RadioHardware,
+    )
+
+    hardware = RadioHardware(
+        band=RadioBand.FIVE_G,
+        channels=(
+            RadioChannel(36, 5180),
+            RadioChannel(140, 5700, radar=True),
+            RadioChannel(149, 5745),
+        ),
+    )
+    return _caps(radio_hardware=(hardware,))
+
+
+def _prune_runner(channels):
+    return BootstrapRunner(
+        responses={
+            ("uci", "-q", "show", "wireless"): WIRELESS_SHOW,
+            ("uci", "-q", "get", "wireless.radio1.band"): CommandResult(returncode=0, stdout="5g\n"),
+            ("uci", "-q", "get", "wireless.radio1.channels"): CommandResult(
+                returncode=0, stdout=f"{channels}\n"
+            ),
+        }
+    )
+
+
+def test_startup_prunes_radar_channels_from_a_stale_auto_list(caplog):
+    caplog.set_level("INFO")
+    runner = _prune_runner("36 140 149")
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_prune_caps())
+
+    assert result.changed is True
+    assert "set wireless.radio1.channels='36 149'" in _batch_payloads(runner)[0]
+    assert (("wifi", "reload"), None) in runner.calls
+    assert "radio1 -> 36 149" in caplog.text
+
+
+def test_startup_leaves_a_usable_auto_list_alone():
+    runner = _prune_runner("36 149")
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_prune_caps())
+
+    assert result.changed is False
+    assert (("wifi", "reload"), None) not in runner.calls
+
+
+def test_startup_falls_back_to_usable_channels_when_none_survive():
+    runner = _prune_runner("140")
+
+    OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_prune_caps())
+
+    assert "set wireless.radio1.channels='36 149'" in _batch_payloads(runner)[0]

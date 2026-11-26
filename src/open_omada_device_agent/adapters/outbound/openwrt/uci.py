@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -96,6 +96,7 @@ class OpenWrtUciAdapter:
             capabilities,
             management_vlan_interface=self._management_vlan_interface,
             management_vlan_device=self._management_vlan_device,
+            current_htmodes=self._current_htmodes(update),
         )
         if not batch:
             return ReconciliationResult(
@@ -126,6 +127,18 @@ class OpenWrtUciAdapter:
             changed=True,
             command_count=len(batch),
         )
+
+    def _current_htmodes(self, update: ApplyDeviceConfigurationCommand) -> dict[str, str]:
+        """Read the current UCI htmode of radios whose channel width will change."""
+        htmodes: dict[str, str] = {}
+        for radio in update.radios:
+            if radio.channel_width is None:
+                continue
+            section = _radio_section(radio.band, radio.radio_id)
+            result = self._runner.run(["uci", "-q", "get", f"wireless.{section}.htmode"])
+            if result.returncode == 0 and result.stdout.strip():
+                htmodes[section] = result.stdout.strip()
+        return htmodes
 
 
 def validate_update(
@@ -206,8 +219,10 @@ def build_uci_batch(
     *,
     management_vlan_interface: str | None = None,
     management_vlan_device: str | None = None,
+    current_htmodes: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
     lines: list[str] = []
+    current_htmodes = current_htmodes or {}
     network_lines: list[str] = []
     active_wlans = _active_wlans(update, capabilities)
     omitted_wlans = tuple(update.wlans[len(active_wlans):])
@@ -232,7 +247,14 @@ def build_uci_batch(
         lines.extend(network_lines)
         lines.append("commit network")
     for radio in update.radios:
-        lines.extend(_radio_lines(radio))
+        section = _radio_section(radio.band, radio.radio_id)
+        lines.extend(
+            _radio_lines(
+                radio,
+                current_htmodes.get(section),
+                advertised_channels=usable_channels(capabilities, radio.band),
+            )
+        )
     for section in _default_sections(active_wlans):
         lines.append(_set("wireless", section, "disabled", "1"))
     for wlan in omitted_wlans:
@@ -272,18 +294,75 @@ def _default_sections(wlans: tuple[WirelessNetwork, ...]) -> tuple[str, ...]:
     )
 
 
-def _radio_lines(radio: RadioConfig) -> tuple[str, ...]:
+def _radio_lines(
+    radio: RadioConfig,
+    current_htmode: str | None = None,
+    *,
+    advertised_channels: tuple[int, ...] = (),
+) -> tuple[str, ...]:
     section = _radio_section(radio.band, radio.radio_id)
     lines = []
     if radio.enabled is not None:
         lines.append(_set("wireless", section, "disabled", "0" if radio.enabled else "1"))
-    if radio.channel is not None:
+    if radio.channel == 0:
+        # Omada Auto: let OpenWrt ACS choose, but only from the controller's
+        # channel range. Without the list ACS may pick a DFS channel the
+        # regulatory domain cannot run, and the radio goes down.
+        lines.append(_set("wireless", section, "channel", "auto"))
+        # channelRange only arrives when the radio is edited in the UI; reconnect
+        # and Force Provision SETs omit it. Fall back to the channels the agent
+        # advertised (no DFS), which is all the controller believes exists.
+        channels = _acs_channels(radio)
+        if advertised_channels:
+            # The controller may still hold a range from another country or
+            # DFS state (e.g. DFS channels saved while radar detection worked).
+            channels = tuple(ch for ch in channels if ch in advertised_channels)
+        channels = channels or advertised_channels
+        if channels:
+            lines.append(_set("wireless", section, "channels", " ".join(map(str, channels))))
+    elif radio.channel is not None:
         lines.append(_set("wireless", section, "channel", str(radio.channel)))
     if radio.channel_width is not None:
-        lines.append(_set("wireless", section, "htmode", _channel_width_mode(radio.channel_width)))
+        htmode = _channel_width_mode(radio.channel_width, radio.band, current_htmode)
+        if htmode is None:
+            log.warning(
+                "Unknown Omada chanWidth code %s for %s; leaving htmode unchanged",
+                radio.channel_width,
+                section,
+            )
+        else:
+            lines.append(_set("wireless", section, "htmode", htmode))
     if radio.tx_power is not None:
         lines.append(_set("wireless", section, "txpower", str(radio.tx_power)))
     return tuple(lines)
+
+
+def usable_channels(
+    capabilities: PlatformCapabilities,
+    band: RadioBand,
+) -> tuple[int, ...]:
+    """Channels the radio may use now: radar channels only if CAC works."""
+    hardware = capabilities.hardware_for(band)
+    if hardware is None:
+        return ()
+    return tuple(ch.channel for ch in hardware.channels if hardware.dfs or not ch.radar)
+
+
+def _acs_channels(radio: RadioConfig) -> tuple[int, ...]:
+    channels = (_frequency_to_channel(radio.band, freq) for freq in radio.channel_range)
+    return tuple(dict.fromkeys(ch for ch in channels if ch is not None))
+
+
+def _frequency_to_channel(band: RadioBand, freq: int) -> int | None:
+    if band is RadioBand.TWO_G:
+        if freq == 2484:
+            return 14
+        if 2412 <= freq <= 2472:
+            return (freq - 2407) // 5
+        return None
+    if band is RadioBand.SIX_G:
+        return (freq - 5950) // 5 if 5955 <= freq <= 7115 else None
+    return (freq - 5000) // 5 if 5160 <= freq <= 5885 else None
 
 
 def _wlan_lines(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> tuple[str, ...]:
@@ -376,14 +455,41 @@ def _wlan_section(wlan: WirelessNetwork) -> str:
     return _slug(f"openomada_{wlan.band.value}_{suffix}")[:48]
 
 
-def _channel_width_mode(width: int) -> str:
-    if width <= 20:
-        return "HT20"
-    if width <= 40:
-        return "HT40"
-    if width <= 80:
-        return "VHT80"
-    return f"HE{width}"
+# Omada sends ``wirelessBasic_*.chanWidth`` as an enum code, not MHz.
+# Observed: 2 -> 20 MHz (EAP650 radioSetting2g with bandWidth "20MHz"),
+# 3 -> 40 MHz (lab, Controller 6.3.0.111), 5 -> 80 MHz (EAP650 radioSetting5g
+# with bandWidth "80MHz", and lab), 7 -> 160 MHz (lab, channel 36).
+# "Auto" widths (lab, Controller 6.3.0.111): 4 = 20/40 Auto (2.4 GHz),
+# 6 = 20/40/80 Auto (5 GHz). They map to the widest width of the set; hostapd
+# still narrows on 2.4 GHz when overlapping BSSes forbid 40 MHz.
+OMADA_CHANNEL_WIDTH_MHZ: dict[int, int] = {2: 20, 3: 40, 4: 40, 5: 80, 6: 80, 7: 160}
+
+_HTMODE_FAMILY = re.compile(r"^(EHT|HE|VHT|HT)", re.IGNORECASE)
+
+
+def _channel_width_mode(
+    width_code: int,
+    band: RadioBand,
+    current_htmode: str | None = None,
+) -> str | None:
+    """Map an Omada chanWidth code to an OpenWrt htmode.
+
+    The radio's current htmode family (EHT/HE/VHT/HT) is kept so that an
+    802.11ax radio stays on HE instead of being downgraded to HT/VHT.
+    """
+    mhz = OMADA_CHANNEL_WIDTH_MHZ.get(width_code)
+    if mhz is None:
+        return None
+    match = _HTMODE_FAMILY.match(current_htmode or "")
+    if match:
+        family = match.group(1).upper()
+    else:
+        family = "HT" if band is RadioBand.TWO_G else "VHT"
+    if family == "VHT" and band is RadioBand.TWO_G:
+        family = "HT"
+    if family == "HT" and mhz > 40:
+        family = "VHT"
+    return f"{family}{mhz}"
 
 
 def _set(config: str, section: str, option: str, value: str) -> str:

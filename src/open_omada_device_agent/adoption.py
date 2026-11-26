@@ -126,7 +126,7 @@ def _device_negotiation_body(
 
     return {
         "configVersion": int(config_version),
-        "devCap": {},
+        "devCap": dict(profile.dev_cap()),
         "deviceInfo": adopt_info,
         "controllerSetting": {"controllerId": controller_id},
         "components": {},

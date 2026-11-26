@@ -1,7 +1,7 @@
 """Application-level contracts shared by orchestration ports."""
 from dataclasses import dataclass
 
-from ..contexts.wireless.domain import RadioBand
+from ..contexts.wireless.domain import RadioBand, RadioHardware
 
 @dataclass(frozen=True)
 class PlatformCapabilities:
@@ -28,3 +28,7 @@ class PlatformCapabilities:
     supports_led_control: bool = False
     supports_client_operations: bool = False
     supports_client_rate_limits: bool = False
+    radio_hardware: tuple[RadioHardware, ...] = ()
+
+    def hardware_for(self, band: RadioBand) -> RadioHardware | None:
+        return next((hw for hw in self.radio_hardware if hw.band is band), None)

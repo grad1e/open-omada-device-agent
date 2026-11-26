@@ -42,7 +42,7 @@ class AgentRuntime:
 def build_runtime(settings: AgentSettings) -> AgentRuntime:
     """Build production dependencies; tests may construct the use cases directly."""
     capabilities = detect_platform_capabilities(env=dict(settings.capability_environment))
-    bootstrap_result = OpenWrtStartupBootstrap(
+    startup_bootstrap = OpenWrtStartupBootstrap(
         config=OpenWrtBootstrapConfig(
             enabled=settings.openwrt_bootstrap,
             ensure_lan=settings.openwrt_bootstrap_lan,
@@ -54,8 +54,16 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             opennds_gateway_name=settings.opennds_gateway_name,
             enable_wan_management=settings.openwrt_enable_wan_management,
             wan_zone=settings.openwrt_wan_zone,
+            wifi_country=settings.wifi_country,
         )
-    ).apply(capabilities)
+    )
+    bootstrap_result = startup_bootstrap.apply(capabilities)
+    if bootstrap_result.wireless_changed:
+        # The regulatory domain changed, so the iw channel list is stale.
+        capabilities = detect_platform_capabilities(env=dict(settings.capability_environment))
+    prune_result = startup_bootstrap.prune_auto_channels(capabilities)
+    if prune_result.warnings:
+        log.warning("Auto channel cleanup warning(s): %s", "; ".join(prune_result.warnings))
     if bootstrap_result.warnings:
         log.warning(
             "OpenWrt bootstrap completed with warning(s): %s",

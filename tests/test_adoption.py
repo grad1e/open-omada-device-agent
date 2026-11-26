@@ -60,7 +60,8 @@ def test_device_negotiation_has_required_non_null_v2_fields():
     body = _device_negotiation_body("0123456789abcdef0123456789abcdef", profile=build_runtime(AgentSettings.from_environment()).device_profile)
 
     assert body["configVersion"] == 0
-    assert body["devCap"] == {}
+    assert isinstance(body["devCap"], dict)
+    assert body["devCap"]["meshChainNum"] == 0
     for key, version in AP_COMPONENTS_V2.items():
         assert body["components_v2"][key] == version
     assert body["components_v2"]
@@ -91,7 +92,7 @@ def test_device_negotiation_advertises_openwrt_wlan_capabilities():
             platform="openwrt",
             has_uci=True,
             has_ubus=True,
-            radio_bands=(RadioBand.TWO_G,),
+            radio_bands=(RadioBand.TWO_G, RadioBand.FIVE_G),
             max_ssids=4,
             supports_wlan_config=True,
             supports_wpa2_psk=True,
@@ -114,12 +115,15 @@ def test_device_negotiation_advertises_openwrt_wlan_capabilities():
         "fr": 2412,
         "vl": 1,
         "mPow": 20,
-        "cFlag": 393216,
+        "cFlag": 0x10000 | 0x20000 | 0x40000 | 0xE0,
         "dFlag": 0,
         "lm": 1,
         "mPowOd": 0,
         "cFlagOd": 0,
     }
+    for radio in body["channelInfo"]:
+        for channel in radio["channelList"]:
+            assert channel["cFlag"] & 0x10000, (radio["band"], channel["vl"])
 
 
 def test_post_adoption_inform_is_not_factory_and_requests_reply_when_asked():

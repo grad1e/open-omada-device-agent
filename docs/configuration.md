@@ -124,6 +124,7 @@ where lab-only manual setup belongs.
 | `OMADA_SITE_NAME` | empty | Human-readable fallback for External Portal redirects when no site ID is available |
 | `OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT` | `false` | Lab-only opt-in to open SSH, LuCI HTTP, and LuCI HTTPS from the WAN zone |
 | `OMADA_OPENWRT_WAN_ZONE` | `wan` | Firewall zone used by the WAN management opt-in rules |
+| `OMADA_WIFI_COUNTRY` | empty | ISO 3166 two-letter code set as `wireless.radioX.country` on every radio. The controller never sends the site country to the AP; without a country OpenWrt uses the restrictive world domain and controller-selected channels can be refused. Empty keeps the current UCI value and logs a warning if a radio has none |
 
 The LAN bootstrap sets `bridge_empty=1` on the bridge device. This is required
 on Wi-Fi-only OpenWrt devices where `br-lan` otherwise does not exist until a

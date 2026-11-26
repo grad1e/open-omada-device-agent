@@ -10,9 +10,11 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from ....application.contracts import PlatformCapabilities
 from ....contexts.wireless.domain import RadioBand
+from .iw_phy import DFS_REGIONS, parse_dfs_region, parse_iw_list
 
 
 CommandExists = Callable[[str], str | None]
@@ -40,12 +42,24 @@ def detect_platform_capabilities(
     radio_bands = _radio_bands(values.get("OMADA_RADIO_BANDS", "2g"))
     max_ssids = _int(values, "OMADA_MAX_SSIDS", 4)
     wlan_possible = openwrt and has_uci
-    max_ssids = _cap_max_ssids_by_iw(
-        max_ssids=max_ssids,
+    iw_output = _iw_list_output(
         openwrt=openwrt,
         command_exists=which,
         command_output=command_output or _run_command_output,
     )
+    max_ssids = _cap_max_ssids_by_iw(max_ssids=max_ssids, iw_output=iw_output)
+    radio_hardware = tuple(
+        hw for hw in parse_iw_list(iw_output or "") if hw.band in radio_bands
+    )
+    if radio_hardware:
+        reg_output = _iw_output(
+            ("reg", "get"),
+            openwrt=openwrt,
+            command_exists=which,
+            command_output=command_output or _run_command_output,
+        )
+        if parse_dfs_region(reg_output or "") in DFS_REGIONS:
+            radio_hardware = tuple(replace(hw, dfs=True) for hw in radio_hardware)
 
     return PlatformCapabilities(
         platform="openwrt" if openwrt else platform,
@@ -82,6 +96,7 @@ def detect_platform_capabilities(
             openwrt and has_ubus,
         ),
         supports_client_rate_limits=_feature(values, "OMADA_CAP_CLIENT_RATE_LIMITS", False),
+        radio_hardware=radio_hardware,
     )
 
 
@@ -150,22 +165,41 @@ def _int(env: Mapping[str, str], name: str, default: int) -> int:
     return int(raw, 0)
 
 
-def _cap_max_ssids_by_iw(
+def _iw_list_output(
     *,
-    max_ssids: int,
     openwrt: bool,
     command_exists: CommandExists,
     command_output: CommandOutput,
-) -> int:
-    configured = max(0, max_ssids)
-    if not openwrt or configured <= 1:
-        return configured
+) -> str | None:
+    return _iw_output(
+        ("list",),
+        openwrt=openwrt,
+        command_exists=command_exists,
+        command_output=command_output,
+    )
 
+
+def _iw_output(
+    args: tuple[str, ...],
+    *,
+    openwrt: bool,
+    command_exists: CommandExists,
+    command_output: CommandOutput,
+) -> str | None:
+    if not openwrt:
+        return None
     iw = command_exists("iw")
     if iw is None:
+        return None
+    return command_output((iw, *args))
+
+
+def _cap_max_ssids_by_iw(*, max_ssids: int, iw_output: str | None) -> int:
+    configured = max(0, max_ssids)
+    if configured <= 1 or iw_output is None:
         return configured
 
-    detected = _iw_ap_interface_limit(command_output((iw, "list")) or "")
+    detected = _iw_ap_interface_limit(iw_output)
     if detected is None:
         return configured
     return min(configured, max(0, detected))

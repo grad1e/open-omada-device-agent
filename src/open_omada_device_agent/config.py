@@ -107,6 +107,9 @@ OPENNDS_GATEWAY_PORT = _int("OMADA_OPENNDS_GATEWAY_PORT", 2050)
 OPENNDS_GATEWAY_NAME = os.getenv("OMADA_OPENNDS_GATEWAY_NAME", "").strip()
 OPENWRT_ENABLE_WAN_MANAGEMENT = _bool("OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT", False)
 OPENWRT_WAN_ZONE = os.getenv("OMADA_OPENWRT_WAN_ZONE", "wan").strip()
+# ISO 3166-1 alpha-2 country applied to every wifi-device (e.g. IN, US, DE).
+# The controller never sends the site country to the AP.
+WIFI_COUNTRY = os.getenv("OMADA_WIFI_COUNTRY", "").strip().upper()
 
 # Lab/research compatibility. When enabled, known controller-side/default
 # configuration families that currently have no local OpenWrt side effect are
