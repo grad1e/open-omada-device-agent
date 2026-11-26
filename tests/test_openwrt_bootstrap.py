@@ -428,4 +428,6 @@ def test_bootstrap_does_not_put_opennds_on_the_uplink_bridge():
 
     assert _batch_payloads(runner) == []
     assert (("/etc/init.d/opennds", "restart"), None) not in runner.calls
-    assert any("carries the default route" in warning for warning in result.warnings)
+    # No warning at boot: an AP without a portal is normal. The portal runtime
+    # reports the problem if a portal SSID arrives.
+    assert result.warnings == ()

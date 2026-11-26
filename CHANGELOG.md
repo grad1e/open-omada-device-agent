@@ -123,6 +123,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- An access point without a portal no longer logs "openNDS gateway interface
+  br-lan carries the default route" at every start. openNDS stays off on such
+  an AP as before; the warning now appears only if the controller sends a
+  portal SSID.
 - `scripts/deploy-openwrt.sh` on a fresh OpenWrt device: openNDS started on
   `br-lan` as soon as it was installed and cut the AP off from its network,
   so the remaining package downloads failed. It is now installed last and

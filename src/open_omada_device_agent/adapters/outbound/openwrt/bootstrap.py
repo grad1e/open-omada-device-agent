@@ -297,10 +297,10 @@ class OpenWrtStartupBootstrap:
     def _ensure_opennds(self) -> OpenWrtBootstrapResult:
         interface = self._config.opennds_interface or self._config.lan_bridge
         if interface == default_route_device(self._runner):
-            return OpenWrtBootstrapResult(
-                applied=True,
-                warnings=(uplink_capture_message(interface),),
-            )
+            # A dumb AP without a guest network: leave openNDS off. The portal
+            # runtime reports this if the controller ever sends a portal SSID.
+            log.debug("openNDS not started: %s", uplink_capture_message(interface))
+            return OpenWrtBootstrapResult(applied=True)
         lines: list[str] = []
         section = "@opennds[0]"
         if self._uci_get("opennds.@opennds[0]") != "opennds":
