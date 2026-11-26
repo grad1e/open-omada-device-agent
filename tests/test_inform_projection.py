@@ -102,3 +102,23 @@ def test_inform_assembler_adds_rogue_ap_list_only_when_present():
     assert "rogueApList" not in _assembler().build(need_reply=False, uptime=1)
     assert "rogueApList" not in _assembler(lambda: []).build(need_reply=False, uptime=1)
     assert _assembler(lambda: [item]).build(need_reply=False, uptime=1)["rogueApList"] == [item]
+
+
+def test_only_logged_in_portal_clients_are_reported_as_portal_authed():
+    assembler = InformAssembler(
+        device_info=lambda: {"name": "ap"},
+        lan=LanObservation(rate=100.0, duplex=1, port="LAN"),
+        clients=lambda: (
+            WirelessClientState(
+                mac="02:00:00:00:00:01",
+                rssi=-60,
+                portal_state=ClientPortalState.UNAUTHENTICATED,
+            ),
+        ),
+        client_projection=lambda clients: [{"mac": "02-00-00-00-00-01"}],
+        wireless_projection=lambda: {},
+    )
+
+    body = assembler.build(need_reply=False, uptime=0)
+
+    assert "portalAuthClients" not in body

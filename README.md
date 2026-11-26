@@ -281,10 +281,15 @@ Validated behavior today:
 - When Omada sends a portal URL through `portalConfigList` or a `/portal/...`
   URL in `portalFreePolicyConfig`, the agent writes an openNDS ThemeSpec that
   redirects the captive browser to that Omada-configured URL instead of the
-  stock openNDS splash. For EAP-style External Portal flows, the redirect
-  appends `clientMac`, `apMac`, `ssidName`, `t`, `radioId`, `site`, and
-  `redirectUrl`, matching the TP-Link External Portal contract required for the
-  portal server to authorize the client through the Controller.
+  stock openNDS splash. For the controller's own login page (`/portal/entry`)
+  the redirect appends the query names it reads: `cid`, `ap`, `ssid`, `rid`,
+  `t`, `u` and `clientIp`. For an External Portal server it appends
+  `clientMac`, `apMac`, `ssidName`, `t`, `radioId`, `site`, and `redirectUrl`,
+  matching the TP-Link External Portal contract.
+- The login page host (or its IP and port) is reachable before login, so the
+  captive browser can load it.
+- End to end with Controller 6.3.0.111's built-in portal: a phone on the
+  portal SSID gets the login page, taps Log In, and openNDS authenticates it.
 - The openNDS adapter disables `allow_preemptive_authentication` and relies on
   the classic HTTP redirect path; this avoids Android CPD/RFC8910 opening a
   generic status page instead of the Omada-configured portal URL.
@@ -294,7 +299,8 @@ Validated behavior today:
 - Omada `clientConfig.unauth` is translated into `ndsctl auth/deauth`.
 - When `conntrack` is installed, deauth also clears flows for the client's IP
   so previously authenticated sessions stop immediately.
-- `ndsctl json` is merged into Omada client telemetry as portal state.
+- `ndsctl json` is merged into Omada client telemetry as portal state. Only
+  logged-in clients are reported in `portalAuthClients`.
 - Client MACs, AP MACs, ECSP header MACs, `deviceInfo.mainMac`, SSID BSSIDs,
   and portal redirect MAC parameters are serialized in Omada's controller-facing
   format: `AA-BB-CC-DD-EE-FF`.

@@ -48,10 +48,13 @@ class InformAssembler:
         if clients:
             projected_clients = self._client_projection(clients)
             body["clients"] = projected_clients
+            # The controller treats every entry as logged in. Listing a client
+            # openNDS still holds as preauthenticated made Controller 6.3.0.111
+            # log "is PENDING but informed as portalAuthed" on every inform.
             portal_clients = [
                 projected
                 for client, projected in zip(clients, projected_clients, strict=False)
-                if client.portal_state is not ClientPortalState.UNKNOWN
+                if client.portal_state is ClientPortalState.AUTHENTICATED
             ]
             if portal_clients:
                 body["portalAuthClients"] = portal_clients

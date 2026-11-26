@@ -245,9 +245,15 @@ With openNDS installed, the agent:
 - writes `/usr/lib/opennds/theme_openomada_redirect.sh` and sets
   `login_option_enabled=3` when Omada provides a portal URL through
   `portalConfigList` or a `/portal/...` free-policy URL;
-- redirects EAP clients with the TP-Link External Portal query contract:
-  `clientMac`, `clientIp`, `t`, `site`, `redirectUrl`, `apMac`,
-  `ssidName`, and `radioId`;
+- redirects EAP clients to an external portal server with the TP-Link
+  External Portal query contract: `clientMac`, `clientIp`, `t`, `site`,
+  `redirectUrl`, `apMac`, `ssidName`, and `radioId`;
+- redirects clients to the controller's built-in portal (`/portal/entry`)
+  with the names that page reads: `cid`, `ap`, `ssid`, `rid`, `t`, `u`, and
+  `clientIp` (Validated: Controller 6.3.0.111 answers 400 with the external
+  names and serves the login page with these);
+- lets clients reach the login page host before login (walled-garden FQDN,
+  or a preauthenticated rule for an IP address);
 - sets `allow_preemptive_authentication=0` so clients use the classic HTTP
   redirect path instead of stopping at the openNDS RFC8910 status page;
 - sets `gatewayfqdn=disable` so the openNDS preauth redirect uses the gateway

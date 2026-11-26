@@ -123,7 +123,8 @@ def test_builds_opennds_policy_with_controller_portal_redirect():
         device_mac="02-11-22-33-44-55",
     )
 
-    assert policy.walled_garden_fqdns == ("mediabeach.com.br",)
+    # The external portal host must be reachable before login.
+    assert policy.walled_garden_fqdns == ("mediabeach.com.br", "portal.example.com")
     assert policy.portal_redirect_url == "https://portal.example.com/login"
     assert policy.landing_page_url == "https://example.com/after-login"
     assert policy.default_ssid_name == "lab-wlan"
@@ -452,3 +453,32 @@ def test_opennds_restarts_on_a_separate_guest_bridge():
 
     assert result.applied is True
     assert ("/etc/init.d/opennds", "restart") in runner.calls
+
+
+def test_controller_login_page_is_reachable_before_login():
+    policy = opennds_portal_policy_from_omada_config(
+        free_policy=None, controller_host="192.0.2.20", device_mac="02:00:00:00:00:01"
+    )
+
+    assert policy.portal_redirect_url == "http://192.0.2.20:8088/portal/entry"
+    assert "allow tcp port 8088 to 192.0.2.20" in policy.preauthenticated_user_rules
+
+
+def test_login_page_hostname_goes_to_the_walled_garden():
+    policy = opennds_portal_policy_from_omada_config(
+        free_policy=None, controller_host="omada.example.net", device_mac="02:00:00:00:00:01"
+    )
+
+    assert "omada.example.net" in policy.walled_garden_fqdns
+
+
+def test_controller_portal_redirect_uses_the_controller_query_names():
+    themespec = build_openomada_redirect_themespec(
+        opennds_portal_policy_from_omada_config(
+            free_policy=None, controller_host="192.0.2.20", device_mac="02:00:00:00:00:01"
+        )
+    )
+
+    for name in ("cid", "ap", "ssid", "rid", "t", "u", "clientIp"):
+        assert f'_openomada_append_param "{name}" ' in themespec
+    assert '_openomada_append_param "apMac"' not in themespec

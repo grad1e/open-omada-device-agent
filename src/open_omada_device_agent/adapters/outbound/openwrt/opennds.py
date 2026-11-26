@@ -268,15 +268,19 @@ def opennds_portal_policy_from_omada_config(
     site_name: str | None = None,
 ) -> OpenNdsPortalPolicy:
     base = opennds_portal_policy_from_free_policy(free_policy)
+    redirect_url = _portal_redirect_url(
+        free_policy=free_policy,
+        portal_configs=portal_configs,
+        controller_host=config.CONTROLLER_HOST if controller_host is None else controller_host,
+    )
+    fqdns, preauth_rules = _allow_portal_host(
+        redirect_url, base.walled_garden_fqdns, base.preauthenticated_user_rules
+    )
     return OpenNdsPortalPolicy(
-        walled_garden_fqdns=base.walled_garden_fqdns,
-        preauthenticated_user_rules=base.preauthenticated_user_rules,
+        walled_garden_fqdns=fqdns,
+        preauthenticated_user_rules=preauth_rules,
         walled_garden_ports=base.walled_garden_ports,
-        portal_redirect_url=_portal_redirect_url(
-            free_policy=free_policy,
-            portal_configs=portal_configs,
-            controller_host=config.CONTROLLER_HOST if controller_host is None else controller_host,
-        ),
+        portal_redirect_url=redirect_url,
         landing_page_url=_portal_landing_page_url(portal_configs),
         default_ssid_name=_portal_default_ssid_name(portal_configs),
         ap_mac=_portal_ap_mac(config.MAC if device_mac is None else device_mac),
@@ -289,6 +293,37 @@ def opennds_portal_policy_from_omada_config(
             configured_site_name=config.SITE_NAME if site_name is None else site_name,
         ),
     )
+
+
+# Query names per redirect target. An external portal server gets the TP-Link
+# External Portal contract; the controller's own /portal/entry page reads
+# short names and answers 400 ("Redirect device is not valid") without
+# ``ap`` (lab, Controller 6.3.0.111).
+EXTERNAL_PORTAL_QUERY = (
+    ("clientMac", "$openomada_client_mac"),
+    ("clientIp", "$openomada_client_ip"),
+    ("t", "$(_openomada_now)"),
+    ("site", "$openomada_site_ref"),
+    ("redirectUrl", "$openomada_redirect_url"),
+    ("apMac", "$openomada_resolved_ap_mac"),
+    ("ssidName", "$openomada_resolved_ssid"),
+    ("radioId", "$openomada_radio_id"),
+)
+CONTROLLER_PORTAL_QUERY = (
+    ("cid", "$openomada_client_mac"),
+    ("ap", "$openomada_resolved_ap_mac"),
+    ("ssid", "$openomada_resolved_ssid"),
+    ("rid", "$openomada_radio_id"),
+    ("t", "$(_openomada_now)"),
+    ("u", "$openomada_redirect_url"),
+    ("clientIp", "$openomada_client_ip"),
+)
+
+
+def _redirect_query_lines(portal_url: str) -> tuple[str, ...]:
+    path = urlparse(portal_url).path.rstrip("/")
+    query = CONTROLLER_PORTAL_QUERY if path == "/portal/entry" else EXTERNAL_PORTAL_QUERY
+    return tuple(f'    _openomada_append_param "{name}" "{value}"' for name, value in query)
 
 
 def build_openomada_redirect_themespec(policy: OpenNdsPortalPolicy) -> str:
@@ -555,14 +590,7 @@ def build_openomada_redirect_themespec(policy: OpenNdsPortalPolicy) -> str:
             "        openomada_redirect_url=$(_openomada_urldecode \"$originurl\")",
             "        openomada_redirect_url=$(_openomada_html_unescape_url \"$openomada_redirect_url\")",
             "    fi",
-            "    _openomada_append_param \"clientMac\" \"$openomada_client_mac\"",
-            "    _openomada_append_param \"clientIp\" \"$openomada_client_ip\"",
-            "    _openomada_append_param \"t\" \"$(_openomada_now)\"",
-            "    _openomada_append_param \"site\" \"$openomada_site_ref\"",
-            "    _openomada_append_param \"redirectUrl\" \"$openomada_redirect_url\"",
-            "    _openomada_append_param \"apMac\" \"$openomada_resolved_ap_mac\"",
-            "    _openomada_append_param \"ssidName\" \"$openomada_resolved_ssid\"",
-            "    _openomada_append_param \"radioId\" \"$openomada_radio_id\"",
+            *_redirect_query_lines(policy.portal_redirect_url),
             "    safe_target=$(printf \"%s\" \"$openomada_target\" | sed 's/&/\\&amp;/g; s/\"/\\&quot;/g; s/</\\&lt;/g; s/>/\\&gt;/g')",
             '    echo "<meta http-equiv=\\"refresh\\" content=\\"0; url=$safe_target\\">"',
             '    echo "<p><a href=\\"$safe_target\\">Open Omada portal</a></p>"',
@@ -598,6 +626,31 @@ def _portal_free_policy_preauth_rules(policy: PortalFreePolicy) -> tuple[str, ..
         if target := _network_from_rule(raw_rule):
             rules.append(f"allow all to {target}")
     return tuple(dict.fromkeys(rules))
+
+
+def _allow_portal_host(
+    redirect_url: str | None,
+    fqdns: tuple[str, ...],
+    preauth_rules: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Let clients reach the login page before they log in.
+
+    On a routed guest network the controller is a forwarded destination, and
+    openNDS rejects it for preauthenticated clients unless it is allowed.
+    """
+    if not redirect_url:
+        return fqdns, preauth_rules
+    parsed = urlparse(redirect_url)
+    host = parsed.hostname
+    if not host:
+        return fqdns, preauth_rules
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return tuple(dict.fromkeys((*fqdns, host))), preauth_rules
+    rule = f"allow tcp port {port} to {host}"
+    return fqdns, tuple(dict.fromkeys((*preauth_rules, rule)))
 
 
 def _portal_redirect_url(

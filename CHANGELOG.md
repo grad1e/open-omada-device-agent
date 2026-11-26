@@ -73,6 +73,16 @@ All notable project changes will be documented in this file.
 - A `SET_REQUEST` without `configVersion`/`configVersionInc` (one-off commands
   such as `rogueApScan`) keeps the current version. It used to drop the
   managed session, which then re-adopted.
+- Redirects to the controller's built-in portal page use the query names it
+  reads (`cid`, `ap`, `ssid`, `rid`, `t`, `u`). The External Portal names made
+  Controller 6.3.0.111 answer HTTP 400 ("Redirect device is not valid").
+- `portalAuthClients` lists only clients that have logged in. Clients still
+  waiting at the portal were listed too, and Controller 6.3.0.111 logged
+  "is PENDING but informed as portalAuthed" on every inform.
+- Portal clients can reach the login page before they log in: its host is
+  added to the openNDS walled garden (hostname) or preauthenticated rules (IP
+  and port). On a routed guest network openNDS refused the controller's
+  `/portal/entry` page.
 - openNDS is started when a portal SSID is configured and it is not running.
   On a guest bridge it exits until the first portal SSID brings the bridge
   up, and a "No Authentication" portal SET carries no portal policy that
