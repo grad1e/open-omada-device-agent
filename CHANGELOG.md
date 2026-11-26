@@ -123,6 +123,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- Re-running `scripts/deploy-openwrt.sh` now updates
+  `/etc/init.d/open-omada-agent` when the repository's version changed, so
+  fixes to the boot service reach installed APs. A local `AGENT_ARGS` line
+  is kept.
 - An access point without a portal no longer logs "openNDS gateway interface
   br-lan carries the default route" at every start. openNDS stays off on such
   an AP as before; the warning now appears only if the controller sends a
