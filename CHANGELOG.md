@@ -58,6 +58,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- Tx Power reaches what the radio can do: `radioCap.maxPow` and each
+  channel's `mPow` now come from the per-channel limit `iw phy` reports
+  (30 dBm on the Jio under IN). It was fixed at 20 dBm, so Custom stopped at
+  20 and High/Auto sent 20. The old 20/23 dBm values remain the fallback.
 - A `SET_REQUEST` without `configVersion`/`configVersionInc` (one-off commands
   such as `rogueApScan`) keeps the current version. It used to drop the
   managed session, which then re-adopted.

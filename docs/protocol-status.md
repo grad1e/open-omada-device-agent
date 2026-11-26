@@ -10,7 +10,7 @@ identifiers.
 | Pre-connect | ✅ | First adoption and `rebuild=1` managed reconnect |
 | Device verification | ✅ | Legacy V2 `cipherType=5` branch |
 | System verification | ✅ | Mutual auth checked before success |
-| Device negotiation | ✅ | Conservative AP component map. `devCap` (mimo, supportRadioMode, supportOFDMA), `radioCap` (mimo, ofdma, mcsLevel) and `channelInfo` (channels, width/band/DFS flags, max power) are built from `iw list` and `iw reg get`; values follow real EAPs of the same Wi-Fi generation (Observed: EAP650 adopt data; Validated: lab adoption as EAP683 UR on Controller 6.3.0.111) |
+| Device negotiation | ✅ | Conservative AP component map. `devCap` (mimo, supportRadioMode, supportOFDMA), `radioCap` (mimo, ofdma, mcsLevel, `maxPow` = highest usable channel `mPow` from `iw phy`; the controller's Tx Power range and High/Auto use it) and `channelInfo` (channels, width/band/DFS flags, max power) are built from `iw list` and `iw reg get`; values follow real EAPs of the same Wi-Fi generation (Observed: EAP650 adopt data; Validated: lab adoption as EAP683 UR on Controller 6.3.0.111) |
 | System negotiation | ✅ | Config/version metadata consumed |
 | Initial sync result | ✅ | ACK validated |
 | Inform | 🟡 | `upTime` as `"<days> days HH:MM:SS"` and `lanInfo.rate` as an integer string (Validated: lab, no controller errors); clients without `rssi` are left out until hostapd reports one. Device, wired LAN, active hostapd clients enriched with DHCP/openNDS metadata, portal auth clients, hostapd station metrics, OpenWrt `wSettings_*`, `ssidStats_*`, and aggregate `radioTraffic_*` when `ubus` is available |

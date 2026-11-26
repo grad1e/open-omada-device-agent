@@ -116,7 +116,10 @@ def test_ax_hardware_advertises_80_mhz_and_wifi6_radio_caps():
     assert five[161]["cFlag"] & 0x800000
     assert not five[165]["cFlag"] & 0x800000
     assert not any(ch in five for ch in (52, 100, 144))  # no DFS region: radar channels hidden
-    assert all(c["mPow"] == 23 for c in five.values())
+    # Per-channel limit from iw (30 dBm under IN), and maxPow follows it so the
+    # controller's Tx Power range reaches what the radio can do.
+    assert all(c["mPow"] == 30 for c in five.values())
+    assert (five_cap["minPow"], five_cap["maxPow"]) == (1, 30)
 
     two = _channels(profile, "2.4G")
     assert all(not c["cFlag"] & (0x100000 | 0x800000) for c in two.values())

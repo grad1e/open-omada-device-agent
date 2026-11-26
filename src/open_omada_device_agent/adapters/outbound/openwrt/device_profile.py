@@ -229,10 +229,17 @@ class GenericOpenWrtAccessPointProfile:
                 RADIO_ID_BY_BAND[band],
                 max_ssids=max_ssids,
                 hardware=self._capabilities.hardware_for(band),
+                max_power=self._max_power(band),
             )
             for band in self._capabilities.radio_bands
             if band in RADIO_ID_BY_BAND
         )
+
+    def _max_power(self, band: RadioBand) -> int:
+        # Real EAPs advertise maxPow equal to their highest per-channel mPow;
+        # the controller builds the Tx Power range (Custom 1..maxPow, High) from it.
+        powers = [channel["mPow"] for channel in self._channel_list(band)] if band in CHANNELS_BY_BAND else []
+        return max(powers, default=DEFAULT_MAX_POWER.get(band, DEFAULT_MAX_POWER_OTHER))
 
     def _supports_dfs(self) -> bool:
         return any(hw.dfs for hw in self._capabilities.radio_hardware)
@@ -288,6 +295,7 @@ def _radio_cap_item(
     *,
     max_ssids: int,
     hardware: RadioHardware | None = None,
+    max_power: int = 20,
 ) -> dict[str, Any]:
     mimo, ofdma, mcs_level = 1, 0, 7
     if hardware is not None:
@@ -297,9 +305,9 @@ def _radio_cap_item(
     return {
         "radioId": radio_id,
         "minPow": 1,
-        "maxPow": 20,
-        "maxPowOd": 20,
-        "limitMaxPow": 20,
+        "maxPow": max_power,
+        "maxPowOd": max_power,
+        "limitMaxPow": max_power,
         "mimo": mimo,
         "ofdma": ofdma,
         "ofdmaEnable": 0,
@@ -323,10 +331,11 @@ def _usable_channels(hardware: RadioHardware) -> tuple[RadioChannel, ...]:
 
 
 def _channel_max_power(band: RadioBand, channel: RadioChannel) -> int:
-    default = DEFAULT_MAX_POWER.get(band, DEFAULT_MAX_POWER_OTHER)
+    # ``iw phy`` reports the per-channel limit the driver will actually apply
+    # (regulatory domain and hardware); fall back to a conservative default.
     if channel.max_power is None:
-        return default
-    return min(default, channel.max_power)
+        return DEFAULT_MAX_POWER.get(band, DEFAULT_MAX_POWER_OTHER)
+    return channel.max_power
 
 
 def _width_flags(hardware: RadioHardware, channel: int, available: set[int]) -> int:
