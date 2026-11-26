@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from functools import lru_cache, partial
 import logging
+import threading
 
 from ..application.configuration import ApplyDeviceConfiguration
 from ..application.contracts import PlatformCapabilities
@@ -13,6 +14,7 @@ from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
 from ..adapters.outbound.openwrt.network_check import OpenWrtNetworkCheck
 from ..adapters.outbound.openwrt.snmp import OpenWrtSnmpAdapter
+from ..adapters.outbound.openwrt.ip_settings import OpenWrtIpSettings
 from ..application.notifications import OutboundNotifications
 from ..adapters.outbound.openwrt.client_snoop import BridgeClientSnooper
 from ..adapters.outbound.openwrt.client_observations import (
@@ -46,6 +48,8 @@ class AgentRuntime:
     device_profile: GenericOpenWrtAccessPointProfile
     capabilities: PlatformCapabilities
     notifications: OutboundNotifications
+    # Set when the LAN address changes, so the session reconnects from it.
+    session_reset: threading.Event
 
 
 @lru_cache(maxsize=1)
@@ -84,6 +88,22 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
     rogue_ap_scanner = OpenWrtRogueApScanner()
     client_snooper = BridgeClientSnooper(settings.client_snoop_interfaces)
     notifications = OutboundNotifications()
+    state_repository = JsonSessionStateRepository(
+        settings.state_file,
+        device_mac=settings.mac,
+        controller_host=settings.controller_host,
+    )
+
+    def controller_endpoint() -> tuple[str, int] | None:
+        state = state_repository.load()
+        return (state.controller_host, state.manage_port) if state else None
+
+    session_reset = threading.Event()
+    ip_settings = OpenWrtIpSettings(
+        interface=settings.openwrt_lan_interface,
+        controller_endpoint=controller_endpoint,
+        on_address_changed=session_reset.set,
+    )
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
@@ -94,6 +114,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             settings.public_ip_lookup_timeout,
         ),
         capabilities=capabilities,
+        lan_setting=ip_settings.report if capabilities.supports_ip_settings else None,
     )
     return AgentRuntime(
         configuration=ApplyDeviceConfiguration(
@@ -126,6 +147,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 rogue_ap_scanner,
                 OpenWrtNetworkCheck(notifications.put),
                 OpenWrtSnmpAdapter(),
+                ip_settings,
             ),
             allow_ack_only_config=settings.lab_ack_control_plane_config,
         ),
@@ -145,13 +167,10 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
             ),
             rogue_aps=rogue_ap_scanner.inform_items,
         ),
-        state_repository=JsonSessionStateRepository(
-            settings.state_file,
-            device_mac=settings.mac,
-            controller_host=settings.controller_host,
-        ),
+        state_repository=state_repository,
         settings=settings,
         device_profile=profile,
         capabilities=capabilities,
         notifications=notifications,
+        session_reset=session_reset,
     )

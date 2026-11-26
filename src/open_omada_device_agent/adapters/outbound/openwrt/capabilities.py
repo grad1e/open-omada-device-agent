@@ -110,6 +110,9 @@ def detect_platform_capabilities(
             "OMADA_CAP_SNMP",
             openwrt and has_uci and which("snmpd") is not None,
         ),
+        # Device Config -> IP Settings rewrites the LAN address, so it is
+        # opt-in; a wrong push could cut the AP off from the controller.
+        supports_ip_settings=_feature(values, "OMADA_CAP_IP_SETTINGS", False),
         radio_hardware=radio_hardware,
     )
 
@@ -135,6 +138,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_rogue_ap_scan",
         "supports_network_check",
         "supports_snmp",
+        "supports_ip_settings",
     ):
         if getattr(capabilities, field):
             enabled.append(field.removeprefix("supports_"))

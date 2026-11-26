@@ -9,7 +9,7 @@ from .....contexts.clients.domain import (
     ClientAuthConfig, ClientControlOperation, ClientRateConfig, ClientRateLimit,
 )
 from .....contexts.device.domain import LedConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig
-from .....contexts.networking.domain import ManagementVlan, validate_vlan_id
+from .....contexts.networking.domain import LanIpSetting, ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
     CaptivePortalIntent, ClientLimit, RadioAdvancedConfig, RadioBand, RadioConfig,
@@ -57,7 +57,6 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
     "controllerSetting",
     "ipGroup",
     "ipv6Group",
-    "lanSetting",
     "lldp",
     "logSetting",
     "macFilterGlobal",
@@ -87,6 +86,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "clientOperation",
     "clientOperation_cmd",
     "clientRateConfig",
+    "lanSetting",
     "led",
     "managementVlan",
     "portalConfigList",
@@ -187,6 +187,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         rogue_ap_scan=body.get("rogueApScan") is not None,
         network_checks=_parse_network_checks(body),
         snmp=_parse_snmp(body.get("snmp")),
+        lan_ip=_parse_lan_setting(body.get("lanSetting")),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
@@ -194,6 +195,36 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         raw_body=dict(body),
     )
 
+
+
+LAN_CONN_TYPES = {0: "static", 1: "dhcp"}
+
+
+def _parse_lan_setting(raw: Any) -> LanIpSetting | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, "lanSetting")
+    conn_type = _optional_int(data.get("connType"))
+    if conn_type not in LAN_CONN_TYPES:
+        # Unknown or missing mode: keep the AP's address as it is.
+        return None
+
+    def text(key: str) -> str | None:
+        value = data.get(key)
+        value = "" if value is None else str(value).strip()
+        return value or None
+
+    return LanIpSetting(
+        mode=LAN_CONN_TYPES[conn_type],
+        ip_address=text("ipAddr"),
+        netmask=text("netMask"),
+        gateway=text("gateway"),
+        dns=tuple(v for v in (text("preferredDNS"), text("alternateDNS")) if v),
+        fallback_enabled=bool(_optional_bool(data.get("useFallBack"))),
+        fallback_ip=text("fallBackIp"),
+        fallback_netmask=text("fallBackMask"),
+        fallback_gateway=text("fallbackGateway"),
+    )
 
 
 def _parse_snmp(raw: Any) -> SnmpConfig | None:

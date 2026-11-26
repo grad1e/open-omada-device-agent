@@ -36,5 +36,24 @@ class ManagementVlan:
     vlan_id: int | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
+@dataclass(frozen=True)
+class LanIpSetting:
+    """Device Config -> IP Settings (SET key ``lanSetting``).
+
+    ``mode`` is ``"static"`` (connType 0) or ``"dhcp"`` (connType 1). The
+    fallback address is what an EAP uses when DHCP gets no lease.
+    """
+
+    mode: str
+    ip_address: str | None = None
+    netmask: str | None = None
+    gateway: str | None = None
+    dns: tuple[str, ...] = ()
+    fallback_enabled: bool = False
+    fallback_ip: str | None = None
+    fallback_netmask: str | None = None
+    fallback_gateway: str | None = None
+
+
 def validate_vlan_id(vlan_id: int) -> int:
     return VlanId(int(vlan_id)).value

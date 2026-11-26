@@ -108,10 +108,16 @@ class GenericOpenWrtAccessPointProfile:
         *,
         ip_address: Callable[[], str],
         capabilities: PlatformCapabilities,
+        lan_setting: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._settings = settings
         self._ip_address = ip_address
         self._capabilities = capabilities
+        self._lan_setting = lan_setting
+
+    def lan_setting(self) -> dict[str, Any] | None:
+        """Current IP Settings for DEVICE_NEGOTIATION, when the agent manages them."""
+        return self._lan_setting() if self._lan_setting is not None else None
 
     def identity(self) -> DeviceIdentity:
         return DeviceIdentity(

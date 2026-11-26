@@ -124,7 +124,7 @@ def _device_negotiation_body(
     adopt_info.pop("ip", None)
     adopt_info.pop("isFactory", None)
 
-    return {
+    body = {
         "configVersion": int(config_version),
         "devCap": dict(profile.dev_cap()),
         "deviceInfo": adopt_info,
@@ -135,6 +135,13 @@ def _device_negotiation_body(
         "radioCap": list(profile.radio_cap()),
         "deviceMisc": profile.device_misc(),
     }
+    # ReportedLanSetting: lets the controller start from the AP's real address
+    # instead of its own default (DHCP).
+    lan_setting = getattr(profile, "lan_setting", None)
+    report = lan_setting() if callable(lan_setting) else None
+    if report:
+        body["lanSetting"] = report
+    return body
 
 
 def _project_inform_body(*, services: ManagedSessionServices, need_reply: bool, started_at: float) -> dict[str, Any]:
@@ -866,7 +873,13 @@ def run_v2_adoption(
         if stale is not None:
             stale.clear()  # Output for a previous session's checks is stale.
         sock.settimeout(0.5)
+        session_reset = getattr(services, "session_reset", None)
+        if session_reset is not None:
+            session_reset.clear()  # this session already uses the current address
         while True:
+            if session_reset is not None and session_reset.is_set():
+                session_reset.clear()
+                raise ConnectionResetError("LAN address changed; reconnecting from the new address")
             now = time.monotonic()
             if now >= next_inform_at:
                 seq += 1

@@ -6,6 +6,17 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Device Config → IP Settings (opt-in with `OMADA_CAP_IP_SETTINGS=true`):
+  DHCP or a static address, netmask, gateway and DNS from SET key
+  `lanSetting` are written to the OpenWrt LAN interface. The change runs after
+  the SET is answered. A detached watchdog restores the previous
+  `/etc/config/network` after 3 minutes unless the agent reaches the
+  controller from the new address. The agent reconnects from the new address,
+  and does not retry a change that was rolled back until the next reboot. The
+  current address is reported to the controller at adoption. The DHCP
+  fallback address is not applied.
+- Site Network Config → SSH is documented as not applied by design: the agent
+  leaves dropbear alone.
 - Device Config → Services → SNMP and the site SNMP settings: the agent
   advertises the `snmp` component when net-snmp's `snmpd` is installed and
   writes `/etc/config/snmpd` from SET key `snmp`: Location, Contact, the

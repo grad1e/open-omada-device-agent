@@ -241,7 +241,6 @@ def test_parse_initial_controller_defaults_as_passive_config():
     assert update.passive_keys == (
         "ipGroup",
         "ipv6Group",
-        "lanSetting",
         "lldp",
         "logSetting",
         "macFilterGlobal",
@@ -250,6 +249,9 @@ def test_parse_initial_controller_defaults_as_passive_config():
     )
     # SNMP is applied by its own command port (snmpd stays off here).
     assert update.snmp is not None and not update.snmp.enabled
+    # IP Settings has its own command port (opt-in with OMADA_CAP_IP_SETTINGS).
+    assert update.lan_ip is not None and update.lan_ip.mode == "dhcp"
+    assert update.lan_ip.fallback_ip == "192.168.0.254"
 
 
 def test_parse_scheduler_as_passive_and_wireless_advanced_as_radio_advanced():

@@ -42,6 +42,7 @@ dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
 | `SET_REQUEST` acknowledgement | 🟡 Partial; rejects unsupported keys |
 | Max clients, RSSI threshold, U-APSD | 🟡 Per radio from Wireless → Advanced; OFDMA is always on (checkbox hidden; OpenWrt has no switch for it) |
 | Network Check (Tools) | 🟡 Ping, Traceroute, DNS Lookup and ARP Table run on the AP with BusyBox; output streams into the controller's Device Output |
+| IP Settings (opt-in) | 🟡 DHCP or static LAN address, gateway and DNS, with automatic rollback if the controller becomes unreachable; enable with `OMADA_CAP_IP_SETTINGS=true` |
 | SNMP (Services) | 🟡 Location, Contact, v1/v2c community and a read-only SNMPv3 user written to OpenWrt's `snmpd`; snmpd runs only while SNMP is on |
 | Interference Detection scan | 🟡 On-demand neighbour scan with `iw`; shows in Statistics → Interference Detection |
 | Radio/SSID configuration | 🟡 OpenWrt UCI adapter: SSIDs, wireless mode, channel, width (20–160 MHz), Tx power up to the radio's limit, Auto channel range, Wi-Fi country (`OMADA_WIFI_COUNTRY`) |

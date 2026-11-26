@@ -592,3 +592,20 @@ def test_set_response_keeps_version_for_one_off_commands():
         "errcode": 0,
         "configVersion": 15,
     }
+
+
+def test_negotiation_reports_lan_setting_only_when_managed():
+    def profile(**kwargs):
+        return GenericOpenWrtAccessPointProfile(
+            AgentSettings.from_environment(),
+            ip_address=lambda: "192.0.2.10",
+            capabilities=PlatformCapabilities(platform="openwrt"),
+            **kwargs,
+        )
+
+    report = {"connType": 0, "ipAddr": "192.0.2.2", "netMask": "255.255.255.0"}
+    managed = _device_negotiation_body("controller-id", profile=profile(lan_setting=lambda: report))
+    unmanaged = _device_negotiation_body("controller-id", profile=profile())
+
+    assert managed["lanSetting"] == report
+    assert "lanSetting" not in unmanaged
