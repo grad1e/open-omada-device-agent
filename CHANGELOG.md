@@ -123,6 +123,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- The random-MAC startup warning recommends pinning the MAC on the device's
+  label instead of the random MAC from the first boot, and says how to
+  re-adopt when the MAC changes.
 - Re-running `scripts/deploy-openwrt.sh` now updates
   `/etc/init.d/open-omada-agent` when the repository's version changed, so
   fixes to the boot service reach installed APs. A local `AGENT_ARGS` line
