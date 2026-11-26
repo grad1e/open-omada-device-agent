@@ -366,12 +366,19 @@ def _watchdog_script(
     rejected: Path,
     fingerprint: str,
 ) -> str:
+    # The change is recorded as rolled back (and the copy removed) only when
+    # the old config was really put back; otherwise the copy is kept for a
+    # manual restore and the agent may retry the change.
     return (
         f"sleep {int(timeout)}; "
         f"if [ -f '{confirm}' ]; then rm -f '{confirm}' '{rollback}' '{rejected}'; exit 0; fi; "
-        f"cp '{rollback}' '{network_config}' && /etc/init.d/network reload; "
+        f"if cp '{rollback}' '{network_config}'; then "
+        "/etc/init.d/network reload; "
         f"rm -f '{rollback}'; echo {fingerprint} > '{rejected}'; "
-        "logger -t open-omada 'IP Settings rolled back: controller unreachable'"
+        "logger -t open-omada 'IP Settings rolled back: controller unreachable'; "
+        "else "
+        f"logger -t open-omada 'IP Settings rollback FAILED: restore {network_config} from {rollback} by hand'; "
+        "fi"
     )
 
 

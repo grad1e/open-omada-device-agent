@@ -324,3 +324,41 @@ def test_failed_schedule_does_not_block_later_changes(tmp_path):
     scheduled = []
     adapter._schedule = scheduled.append
     assert adapter.reconcile(_static(), _caps()).changed and len(scheduled) == 1
+
+
+def _run_watchdog(tmp_path, network_config):
+    import subprocess
+
+    from open_omada_device_agent.adapters.outbound.openwrt.ip_settings import _watchdog_script
+
+    rollback = tmp_path / "network.backup"
+    rollback.write_text("config interface 'lan'  # old\n")
+    rejected = tmp_path / "rolled-back"
+    script = _watchdog_script(
+        rollback=rollback,
+        confirm=tmp_path / "confirmed",
+        network_config=network_config,
+        timeout=0,
+        rejected=rejected,
+        fingerprint="abc123",
+    )
+    subprocess.run(["/bin/sh", "-c", script], check=False, capture_output=True)
+    return rollback, rejected
+
+
+def test_watchdog_records_a_rollback_that_worked(tmp_path):
+    network = tmp_path / "network"
+    network.write_text("config interface 'lan'  # new\n")
+
+    rollback, rejected = _run_watchdog(tmp_path, network)
+
+    assert network.read_text().endswith("# old\n")
+    assert rejected.read_text().strip() == "abc123"
+    assert not rollback.exists()
+
+
+def test_watchdog_keeps_the_copy_when_the_restore_fails(tmp_path):
+    rollback, rejected = _run_watchdog(tmp_path, tmp_path / "missing-dir" / "network")
+
+    assert not rejected.exists()  # the agent may retry; nothing was rolled back
+    assert rollback.exists()  # kept for a manual restore
