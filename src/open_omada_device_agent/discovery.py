@@ -24,6 +24,25 @@ from .contexts.device.domain import DeviceProfile
 
 log = logging.getLogger("open_omada.discovery")
 
+# One Adopt click makes the controller send several PRE_ADOPT_REQUESTs within
+# ~100 ms. They queue while the first attempt runs; without a hold-off each one
+# starts another adoption with the same credentials.
+PRE_ADOPT_HOLDOFF_SECONDS = 5.0
+
+
+class PreAdoptDeduplicator:
+    """Drop PRE_ADOPT_REQUEST retransmissions that follow a finished attempt."""
+
+    def __init__(self, holdoff: float = PRE_ADOPT_HOLDOFF_SECONDS) -> None:
+        self._holdoff = holdoff
+        self._last_finished: float | None = None
+
+    def is_duplicate(self, now: float) -> bool:
+        return self._last_finished is not None and now - self._last_finished < self._holdoff
+
+    def attempt_finished(self, now: float) -> None:
+        self._last_finished = now
+
 
 def build_discovery(
     seq: int,
@@ -221,6 +240,44 @@ def run(
     no_adopt: bool = False,
     force_discovery: bool = False,
 ) -> None:
+    """Run discovery/adoption and managed sessions until stopped.
+
+    A controller Forget clears local state mid-session; the agent then starts
+    over as a factory device instead of exiting or advertising itself as
+    still managed.
+    """
+    forgotten = False
+    first = True
+    while _run_cycle(
+        services=services,
+        once=once,
+        dump_tx=dump_tx,
+        no_adopt=no_adopt,
+        force_discovery=(force_discovery and first) or forgotten,
+        forgotten=forgotten,
+    ):
+        if once:
+            return
+        first = False
+        forgotten = services.state_repository.load() is None
+        if forgotten:
+            log.warning(
+                "Managed state was cleared (controller Forget); restarting discovery "
+                "as a factory device"
+            )
+        else:
+            time.sleep(_retry_delay(services))
+
+
+def _run_cycle(
+    *,
+    services: ManagedSessionServices,
+    once: bool = False,
+    dump_tx: bool = False,
+    no_adopt: bool = False,
+    force_discovery: bool = False,
+    forgotten: bool = False,
+) -> bool:
     # Once initial sync has completed, only non-secret routing state is stored.
     # Normal restarts therefore skip discovery/adoption and reconnect directly
     # to the V2 manage port like an already-managed EAP.
@@ -228,20 +285,30 @@ def run(
     managed_recovery = False
     if not force_discovery and not no_adopt and not once and saved_state is not None:
         if _run_saved_managed_session(dump_tx=dump_tx, services=services):
-            return
+            return True
         # The controller closed PRE_CONNECT before it could reply repeatedly.
         # Keep the state file and re-advertise the same adopted MAC/site over
         # UDP so manager-core can reconstruct its device image/context.
-        managed_recovery = True
         saved_state = services.state_repository.load()
+        if saved_state is None:
+            # Forget cleared the state during the session: not a failed
+            # reconnect, so let run() restart as a factory device.
+            return True
+        managed_recovery = True
 
     # Older agent versions did not persist state. Try the ordinary managed
     # reconnect path once before discovery so an already-adopted AP can upgrade
     # without one final manual Adopt click.
-    if not managed_recovery and not force_discovery and not no_adopt and not once:
+    if (
+        not managed_recovery
+        and not forgotten
+        and not force_discovery
+        and not no_adopt
+        and not once
+    ):
         if _try_bootstrap_managed_reconnect(dump_tx=dump_tx, services=services):
             _run_saved_managed_session(dump_tx=dump_tx, services=services)
-            return
+            return True
 
     target = (services.settings.controller_host, services.settings.discovery_port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -253,6 +320,7 @@ def run(
     seq = 1
     next_send = 0.0
     deadline: float | None = None
+    pre_adopt_dedup = PreAdoptDeduplicator()
     next_managed_probe_at = (
         time.monotonic() + 1.5 if managed_recovery else float("inf")
     )
@@ -314,7 +382,7 @@ def run(
                 data, addr = sock.recvfrom(65535)
             except socket.timeout:
                 if once and deadline is not None and time.monotonic() >= deadline:
-                    return
+                    return False
                 # A managed discovery may be enough for Controller to rebuild
                 # its device image/context without sending PRE_ADOPT. Periodically
                 # probe the managed TCP path again, but far less aggressively
@@ -340,7 +408,7 @@ def run(
                         )
                         if result.reached_system_verify:
                             _run_saved_managed_session(dump_tx=dump_tx, services=services)
-                            return
+                            return True
                     except AuthenticationRejected as exc:
                         log.error(
                             "Managed rediscovery authentication rejected: %s; continuing discovery",
@@ -375,6 +443,10 @@ def run(
             if msg_type != int(MessageType.PRE_ADOPT_REQUEST):
                 continue
 
+            if pre_adopt_dedup.is_duplicate(time.monotonic()):
+                log.info("Ignoring duplicate PRE_ADOPT_REQUEST retransmission")
+                continue
+
             adopt_port = int(body.get("adoptPort") or services.settings.manage_port)
             log.warning(
                 "PRE_ADOPT_REQUEST received: adoptPort=%d controllerId=%r. Discovery stage is proven.",
@@ -387,8 +459,8 @@ def run(
                     "recovering automatically with the existing Device Account credentials"
                 )
             if no_adopt:
-                log.warning("--no-adopt set; not opening the TCP adoption channel")
-                continue
+                log.warning("--no-adopt set; not opening the TCP adoption channel. Exiting.")
+                return False
 
             # Keep UDP discovery alive across a rejected Device Account attempt.
             # A new discovery frame can make the controller retry PRE_ADOPT on
@@ -402,6 +474,7 @@ def run(
                     dump_json=dump_tx,
                 )
             except AuthenticationRejected as exc:
+                pre_adopt_dedup.attempt_finished(time.monotonic())
                 log.error(
                     "Device Account authentication rejected: %s Keeping discovery alive for another controller retry.",
                     exc,
@@ -409,12 +482,14 @@ def run(
                 next_send = 0.0
                 continue
             except RuntimeError as exc:
+                pre_adopt_dedup.attempt_finished(time.monotonic())
                 log.error(
                     "Adoption attempt was rejected: %s Keeping discovery alive instead of exiting.",
                     exc,
                 )
                 next_send = 0.0
                 continue
+            pre_adopt_dedup.attempt_finished(time.monotonic())
 
             # run_v2_adoption normally remains here for the lifetime of the
             # manage connection. If it returns after successful sync, state now
@@ -426,3 +501,4 @@ def run(
         sock.close()
 
     _run_saved_managed_session(dump_tx=dump_tx, services=services)
+    return True

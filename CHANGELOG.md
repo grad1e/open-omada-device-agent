@@ -30,6 +30,8 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- `--no-adopt` now exits after the first `PRE_ADOPT_REQUEST`, as its help text
+  says, instead of continuing discovery forever.
 - `wSettings_*.txPower` is reported as `"<n>dBm"`; a bare number made
   Controller 6.2/6.3 drop every inform and show the AP as "Heartbeat Missed".
 - Omada `chanWidth` enum codes (2=20, 3=40, 5=80, 6=160 MHz) are mapped to
