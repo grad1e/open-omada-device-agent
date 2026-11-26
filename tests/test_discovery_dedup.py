@@ -243,3 +243,50 @@ def test_once_returns_after_one_adoption_cycle(monkeypatch):
     discovery.run(services=services, once=True)
 
     assert sessions == [1]
+
+
+def test_discovery_survives_a_network_unreachable_send(monkeypatch):
+    # Right after an address change the AP can have no route for a moment;
+    # that must not kill the agent.
+    import errno
+    from types import SimpleNamespace
+
+    import open_omada_device_agent.discovery as discovery
+
+    class _NoRouteOnce(_FakeSocket):
+        def __init__(self):
+            super().__init__([])
+            self.sends = 0
+
+        def sendto(self, _frame, _target):
+            self.sends += 1
+            if self.sends == 1:
+                raise OSError(errno.ENETUNREACH, "Network unreachable")
+
+    fake_socket = _NoRouteOnce()
+    monkeypatch.setattr(discovery.socket, "socket", lambda *_a: fake_socket)
+    monkeypatch.setattr(discovery, "build_discovery", lambda *a, **k: {})
+    monkeypatch.setattr(discovery, "encode_frame", lambda _m: b"\0\0\0\0{}")
+    settings = SimpleNamespace(
+        controller_host="192.0.2.1",
+        discovery_port=29810,
+        local_discovery_port=0,
+        controller_id="controller",
+        site_id="",
+        destination_controller_id="",
+        mac="aa:bb:cc:dd:ee:ff",
+        discovery_interval=0.0,
+        manage_port=29814,
+    )
+    services = SimpleNamespace(
+        settings=settings,
+        state_repository=SimpleNamespace(load=lambda: None),
+        device_profile=None,
+    )
+
+    try:
+        discovery.run(services=services, force_discovery=True)
+    except _StopLoop:
+        pass
+
+    assert fake_socket.sends == 2  # retried after the failed send
