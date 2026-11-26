@@ -20,7 +20,7 @@ bash -n scripts/deploy-openwrt.sh   # after editing the deploy script
 ```
 
 Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
-(see the README's install section). Agent log on the AP:
+(see [docs/install-openwrt.md](docs/install-openwrt.md)). Agent log on the AP:
 `logread -e open_omada`.
 
 ## Layout

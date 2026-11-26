@@ -241,6 +241,15 @@ All notable project changes will be documented in this file.
 
 ### Documentation
 
+- Shorter README aimed at new users: what the project does, that it is built
+  and tested on the JioRouter AX6000 (JIDU6101) with OpenWrt 25.12.6 and
+  welcomes pull requests for other devices, what works, a four-step
+  install summary, and a prompt for setting it up with an AI coding agent.
+  The full install guide moved to
+  `docs/install-openwrt.md` (with JIDU6101 notes: label MAC pinning, LED
+  paths), the captive portal details to `docs/captive-portal.md`, the
+  feature table to `docs/protocol-status.md`, and running from source to
+  `docs/development.md`.
 - The project now lives at
   [grad1e/open-omada-device-agent](https://github.com/grad1e/open-omada-device-agent),
   a fork of the upstream repository with `develop` as its main branch.

@@ -49,7 +49,7 @@ ruff check .
 
 Unit tests do not talk to a controller. For a behavior change, install the
 agent on a lab access point with `scripts/deploy-openwrt.sh` (see
-"Install on an OpenWrt access point" in the README) and check:
+[docs/install-openwrt.md](docs/install-openwrt.md)) and check:
 
 1. the agent log (`logread -e open_omada`) shows `INFORM_RESPONSE` and no
    tracebacks;

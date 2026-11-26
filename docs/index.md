@@ -7,6 +7,8 @@ by Open Omada Device Agent.
 
 | Document | Purpose |
 | --- | --- |
+| [Install on OpenWrt](install-openwrt.md) | Step-by-step setup on an OpenWrt access point |
+| [Captive portal](captive-portal.md) | Portal SSIDs with openNDS on OpenWrt |
 | [Protocol overview](protocol-overview.md) | High-level ECSP model and message families |
 | [Wire format](ecsp-wire-format.md) | JSON envelope and 4-byte length framing |
 | [Device lifecycle](device-lifecycle.md) | Discovery, adoption, authentication, sync, and reconnect |
