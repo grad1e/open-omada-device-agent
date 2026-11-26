@@ -8,7 +8,7 @@ from .....application.commands import ApplyDeviceConfigurationCommand
 from .....contexts.clients.domain import (
     ClientAuthConfig, ClientControlOperation, ClientRateConfig, ClientRateLimit,
 )
-from .....contexts.device.domain import LedConfig, WifiControlLedConfig
+from .....contexts.device.domain import LedConfig, NetworkCheckRequest, WifiControlLedConfig
 from .....contexts.networking.domain import ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
@@ -80,6 +80,9 @@ PASSIVE_CONFIG_KEYS = {
 
 ACK_ONLY_CONFIG_KEYS: set[str] = set()
 
+# Tools -> Network Check: one SET key per tool.
+NETWORK_CHECK_KEYS = ("ping", "traceroute", "dnslookup", "arptable")
+
 KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PASSIVE_CONFIG_KEYS | {
     "clientConfig",
     "clientOperation",
@@ -91,7 +94,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "portalFreePolicyConfig",
     "rogueApScan",
     "wifiControlLed",
-}
+} | set(NETWORK_CHECK_KEYS)
 
 
 def parse_set_request(message: Mapping[str, Any]) -> AccessPointConfigUpdate:
@@ -182,12 +185,36 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         client_operations=tuple(client_operations),
         client_rate_config=client_rate_config,
         rogue_ap_scan=body.get("rogueApScan") is not None,
+        network_checks=_parse_network_checks(body),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
         unhandled_keys=unhandled,
         raw_body=dict(body),
     )
+
+
+
+def _parse_network_checks(body: Mapping[str, Any]) -> tuple[NetworkCheckRequest, ...]:
+    requests = []
+    for kind in NETWORK_CHECK_KEYS:
+        raw = body.get(kind)
+        if raw is None:
+            continue
+        data = _require_mapping(raw, kind)
+        additional = data.get("additional")
+        additional = additional if isinstance(additional, Mapping) else {}
+        dest = data.get("dest")
+        requests.append(
+            NetworkCheckRequest(
+                kind=kind,
+                cmd_id=str(data.get("cmdId") or ""),
+                dest=str(dest).strip() if dest not in (None, "") else None,
+                count=_optional_int(additional.get("cnt")),
+                packet_size=_optional_int(additional.get("pktSize")),
+            )
+        )
+    return tuple(requests)
 
 
 def _parse_radio_config(band: RadioBand, raw: Any) -> RadioConfig:

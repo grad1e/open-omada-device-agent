@@ -29,6 +29,7 @@ class PlatformCapabilities:
     supports_client_operations: bool = False
     supports_client_rate_limits: bool = False
     supports_rogue_ap_scan: bool = False
+    supports_network_check: bool = False
     radio_hardware: tuple[RadioHardware, ...] = ()
 
     def hardware_for(self, band: RadioBand) -> RadioHardware | None:

@@ -385,6 +385,38 @@ def _send_inform(
     _log_message("TX/TCP", inform, dump_json=dump_json)
 
 
+
+def _send_device_notify(
+    sock: socket.socket,
+    *,
+    seq: int,
+    notify_id: int,
+    subject: int,
+    content: dict[str, Any],
+    controller_id: str,
+    dump_json: bool,
+    services: ManagedSessionServices,
+) -> None:
+    """Send an AP-initiated NOTIFY_REQUEST; nre=1 asks for no reply.
+
+    The controller routes subject-based notifies (troubleshooting included)
+    from the plain NOTIFY_REQUEST type even on V2 sessions; NOTIFY_REQUEST_V2
+    is only handled for OLT devices.
+    """
+    notify = build_message(
+        mac=services.settings.mac,
+        msg_type=MessageType.NOTIFY_REQUEST,
+        body={"nid": notify_id, "sub": subject, "nre": 1, "ctnt": content},
+        version=services.settings.ecsp_version,
+        ver_cap=services.settings.ecsp_ver_cap,
+        seq=seq,
+        dest=controller_id,
+        timestamp=int(time.time() * 1000),
+    )
+    send_tcp_message(sock, notify)
+    _log_message("TX/TCP", notify, dump_json=dump_json)
+
+
 def _send_get_response(
     sock: socket.socket,
     request: dict[str, Any],
@@ -829,6 +861,10 @@ def run_v2_adoption(
         # SET_RESPONSE is grounded in the controller's BaseConfigResponse
         # schema. GET/NOTIFY handlers preserve request correlation and return
         # explicit unsupported responses until payload-specific bodies are known.
+        notify_id = 0
+        stale = getattr(services, "notifications", None)
+        if stale is not None:
+            stale.clear()  # Output for a previous session's checks is stale.
         sock.settimeout(0.5)
         while True:
             now = time.monotonic()
@@ -844,6 +880,21 @@ def run_v2_adoption(
                     services=services,
                 )
                 next_inform_at = now + max(0.5, services.settings.inform_interval)
+
+            notifications = getattr(services, "notifications", None)
+            for notification in notifications.drain() if notifications is not None else ():
+                seq += 1
+                notify_id += 1
+                _send_device_notify(
+                    sock,
+                    seq=seq,
+                    notify_id=notify_id,
+                    subject=notification.subject,
+                    content=notification.content,
+                    controller_id=controller_id,
+                    dump_json=dump_json,
+                    services=services,
+                )
 
             try:
                 message, _ = recv_tcp_message(sock)

@@ -11,6 +11,8 @@ from ..adapters.outbound.openwrt.uci import OpenWrtUciAdapter
 from ..adapters.outbound.openwrt.capabilities import detect_platform_capabilities
 from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
+from ..adapters.outbound.openwrt.network_check import OpenWrtNetworkCheck
+from ..application.notifications import OutboundNotifications
 from ..adapters.outbound.openwrt.client_snoop import BridgeClientSnooper
 from ..adapters.outbound.openwrt.client_observations import (
     client_stats_payload,
@@ -42,6 +44,7 @@ class AgentRuntime:
     settings: AgentSettings
     device_profile: GenericOpenWrtAccessPointProfile
     capabilities: PlatformCapabilities
+    notifications: OutboundNotifications
 
 
 @lru_cache(maxsize=1)
@@ -79,6 +82,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
     wireless_telemetry = OpenWrtWirelessTelemetry()
     rogue_ap_scanner = OpenWrtRogueApScanner()
     client_snooper = BridgeClientSnooper(settings.client_snoop_interfaces)
+    notifications = OutboundNotifications()
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
@@ -119,6 +123,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                     rate_limit_interface=settings.client_rate_limit_interface,
                 ),
                 rogue_ap_scanner,
+                OpenWrtNetworkCheck(notifications.put),
             ),
             allow_ack_only_config=settings.lab_ack_control_plane_config,
         ),
@@ -146,4 +151,5 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         settings=settings,
         device_profile=profile,
         capabilities=capabilities,
+        notifications=notifications,
     )

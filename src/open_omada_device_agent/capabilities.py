@@ -66,4 +66,10 @@ def ap_components_v2(
         # Controller 6.3.0.111 model templates list rogueAp=3.0 and
         # rogueApInform=2.0 for the EAP650; results travel in ``rogueApList``.
         components.update({"rogueAp": "3.0", "rogueApInform": "2.0"})
+    if capabilities.supports_network_check:
+        # Controller 6.3.0.111 shows Tools -> Network Check when the AP lists
+        # dnslookup/arptable >= 1.0; each tool is its own SET key.
+        components.update(
+            {"ping": "1.0", "traceroute": "1.0", "dnslookup": "1.0", "arptable": "1.0"}
+        )
     return components

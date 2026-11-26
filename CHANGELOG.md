@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Tools → Network Check: Ping, Traceroute, DNS Lookup and ARP Table. The agent
+  advertises the `ping`/`traceroute`/`dnslookup`/`arptable` components, runs
+  BusyBox `ping`/`traceroute`/`nslookup` (or reads `/proc/net/arp`) in the
+  background, and streams the output line by line as TROUBLESHOOTING notifies
+  (plain `NOTIFY_REQUEST`, base64 `msg`). `OMADA_CAP_NETWORK_CHECK=false`
+  turns it off.
 - Client IP addresses and names on a bridge-only AP: the agent listens
   (receive only) on its bridges and learns each Wi-Fi client's IPv4, IPv6 and
   host name from DHCP requests, ARP, IPv6 neighbour discovery and mDNS. A

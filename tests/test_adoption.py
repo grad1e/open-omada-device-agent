@@ -21,6 +21,7 @@ from open_omada_device_agent.adoption import (
     _preconnect_body,
     _send_forget_response,
     _send_get_response,
+    _send_device_notify,
     _send_notify_reply,
     _set_response_body,
 )
@@ -371,6 +372,32 @@ def test_send_notify_reply_uses_v2_reply_for_v2_request():
     assert message["body"]["nid"] == 99
     assert message["body"]["sub"] == 15
     assert message["body"]["err"] == 1
+
+
+def test_device_notify_uses_plain_notify_type_for_troubleshooting():
+    # 6.3.0.111 only handles NOTIFY_REQUEST_V2 from OLTs ("Not supported
+    # device type: ap"); AP troubleshooting must use NOTIFY_REQUEST (80).
+    sock = RecordingSocket()
+
+    _send_device_notify(
+        sock,
+        seq=3,
+        notify_id=1,
+        subject=5,
+        content={"cmdId": "c1", "troubleshooting": {"msg": "", "seq": 0, "finish": 1}},
+        controller_id="controller-id",
+        dump_json=False,
+        services=build_runtime(AgentSettings.from_environment()),
+    )
+
+    message = decode_frame(sock.sent)
+    assert message["header"]["type"] == int(MessageType.NOTIFY_REQUEST) == 80
+    assert message["body"] == {
+        "nid": 1,
+        "sub": 5,
+        "nre": 1,
+        "ctnt": {"cmdId": "c1", "troubleshooting": {"msg": "", "seq": 0, "finish": 1}},
+    }
 
 
 def test_send_notify_reply_honors_no_reply_flag():

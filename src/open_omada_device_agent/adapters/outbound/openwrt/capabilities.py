@@ -102,6 +102,8 @@ def detect_platform_capabilities(
             "OMADA_CAP_ROGUE_AP_SCAN",
             openwrt and bool(radio_hardware),
         ),
+        # Tools -> Network Check runs BusyBox ping/traceroute/nslookup.
+        supports_network_check=_feature(values, "OMADA_CAP_NETWORK_CHECK", openwrt),
         radio_hardware=radio_hardware,
     )
 
@@ -125,6 +127,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_client_operations",
         "supports_client_rate_limits",
         "supports_rogue_ap_scan",
+        "supports_network_check",
     ):
         if getattr(capabilities, field):
             enabled.append(field.removeprefix("supports_"))

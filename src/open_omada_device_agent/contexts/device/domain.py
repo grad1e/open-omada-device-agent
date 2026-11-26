@@ -13,6 +13,17 @@ class DeviceIdentity:
     firmware_version: str
 
 @dataclass(frozen=True)
+class NetworkCheckRequest:
+    """One Tools -> Network Check run (SET keys ``ping``/``traceroute``/``dnslookup``/``arptable``)."""
+
+    kind: str
+    cmd_id: str
+    dest: str | None = None
+    count: int | None = None
+    packet_size: int | None = None
+
+
+@dataclass(frozen=True)
 class LedConfig:
     enabled: bool | None = None
     locate: bool | None = None
