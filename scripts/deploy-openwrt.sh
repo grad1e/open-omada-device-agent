@@ -248,13 +248,30 @@ sys.exit(main())
 LAUNCHER
 chmod 755 "$REMOTE_AGENT"
 
+# Boot service: install it, or replace it when the repository's version
+# changed. A local AGENT_ARGS line (e.g. --debug) is kept.
 SERVICE=/etc/init.d/open-omada-agent
+NEW_SERVICE=$(mktemp)
+sed -e "s|^AGENT_DIR=.*|AGENT_DIR=$REMOTE_DIR|" -e "s|^AGENT=.*|AGENT=$REMOTE_AGENT|" \
+    "$REMOTE_DIR/scripts/openwrt/open-omada-agent.init" > "$NEW_SERVICE"
+if [ -f "$SERVICE" ]; then
+    args=$(grep '^AGENT_ARGS=' "$SERVICE" | head -n 1 || true)
+    if [ -n "$args" ]; then
+        awk -v line="$args" '/^AGENT_ARGS=/ { print line; next } { print }' \
+            "$NEW_SERVICE" > "$NEW_SERVICE.args" && mv "$NEW_SERVICE.args" "$NEW_SERVICE"
+    fi
+fi
 if [ ! -f "$SERVICE" ]; then
-    sed -e "s|^AGENT_DIR=.*|AGENT_DIR=$REMOTE_DIR|" -e "s|^AGENT=.*|AGENT=$REMOTE_AGENT|" \
-        "$REMOTE_DIR/scripts/openwrt/open-omada-agent.init" > "$SERVICE"
+    mv "$NEW_SERVICE" "$SERVICE"
     chmod 755 "$SERVICE"
     "$SERVICE" enable
     echo "Installed and enabled the $SERVICE boot service"
+elif ! cmp -s "$NEW_SERVICE" "$SERVICE"; then
+    mv "$NEW_SERVICE" "$SERVICE"
+    chmod 755 "$SERVICE"
+    echo "Updated the $SERVICE boot service"
+else
+    rm -f "$NEW_SERVICE"
 fi
 SETUP
 
