@@ -125,6 +125,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- openNDS is no longer enabled on the LAN bridge when the AP has no default
+  route (DHCP still waiting, link down). The uplink is unknown then, and
+  openNDS on the uplink bridge cuts the AP off from its gateway and the
+  controller. It stays off until a default route shows the interface is safe.
 - Discovery no longer crashes the agent when the AP briefly has no route to
   the controller (for example right after an address change); it logs and
   retries.

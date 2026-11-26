@@ -64,7 +64,15 @@ def default_route_device(runner: CommandRunner) -> str | None:
     return match.group(1) if match else None
 
 
-def uplink_capture_message(interface: str) -> str:
+def uplink_capture_message(interface: str, uplink: str | None = None) -> str:
+    if uplink is None:
+        return (
+            f"openNDS not started on {interface}: the AP has no default route yet, "
+            "so it cannot tell whether that interface is its uplink. Portal SSIDs "
+            "need a routed guest network (OMADA_PORTAL_NETWORK, "
+            "OMADA_OPENNDS_INTERFACE); the agent retries when the controller "
+            "sends the portal again."
+        )
     return (
         f"openNDS gateway interface {interface} carries the default route: the "
         "uplink router would be treated as an unauthenticated portal client and "
@@ -79,8 +87,9 @@ class OpenNdsPortalAdapter:
 
     def apply(self, policy: OpenNdsPortalPolicy) -> OpenNdsPortalResult:
         interface = self._gateway_interface()
-        if interface and interface == default_route_device(self._runner):
-            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface))
+        uplink = default_route_device(self._runner)
+        if interface and (uplink is None or interface == uplink):
+            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface, uplink))
         delete_commands = [
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_fqdn_list"],
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_port_list"],

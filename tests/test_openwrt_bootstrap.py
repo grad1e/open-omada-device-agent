@@ -106,6 +106,10 @@ def test_bootstrap_creates_minimal_lan_bridge_when_missing():
 def test_bootstrap_configures_opennds_base_and_disables_preemptive_auth():
     runner = BootstrapRunner(
         responses={
+            # A router: the uplink is wan, so openNDS may run on br-lan.
+            ("ip", "-4", "route", "show", "default"): CommandResult(
+                returncode=0, stdout="default via 198.51.100.1 dev wan\n"
+            ),
             ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
                 returncode=0,
                 stdout="opennds\n",
@@ -143,6 +147,10 @@ def test_bootstrap_configures_opennds_base_and_disables_preemptive_auth():
 def test_bootstrap_starts_opennds_when_base_config_is_already_current():
     runner = BootstrapRunner(
         responses={
+            # A router: the uplink is wan, so openNDS may run on br-lan.
+            ("ip", "-4", "route", "show", "default"): CommandResult(
+                returncode=0, stdout="default via 198.51.100.1 dev wan\n"
+            ),
             ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
                 returncode=0,
                 stdout="opennds\n",
@@ -431,3 +439,22 @@ def test_bootstrap_does_not_put_opennds_on_the_uplink_bridge():
     # No warning at boot: an AP without a portal is normal. The portal runtime
     # reports the problem if a portal SSID arrives.
     assert result.warnings == ()
+
+
+def test_bootstrap_leaves_opennds_off_without_a_default_route():
+    # DHCP still waiting or the link down: the uplink is unknown, so openNDS
+    # must not start on the LAN bridge and cut the AP off.
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
+                returncode=0, stdout="opennds\n"
+            ),
+            ("ip", "-4", "route", "show", "default"): CommandResult(returncode=0, stdout=""),
+        }
+    )
+    OpenWrtStartupBootstrap(runner, config=OpenWrtBootstrapConfig(ensure_lan=False)).apply(
+        _caps(has_opennds=True)
+    )
+
+    assert _batch_payloads(runner) == []
+    assert (("/etc/init.d/opennds", "restart"), None) not in runner.calls
