@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import ipaddress
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,8 @@ from ....contexts.clients.domain import ClientOperationCode, ClientRateConfig
 from ....shared.domain import MacAddress
 from .uci import CommandRunner, SubprocessRunner
 from ....application.contracts import PlatformCapabilities
+
+log = logging.getLogger("open_omada.openwrt.device_commands")
 
 NFT_CLIENT_TABLE = "openomada_clients"
 NFT_CLIENT_RATE_TABLE = "openomada_client_rates"
@@ -46,6 +49,26 @@ class SysfsLedAdapter:
         self._default_trigger = (
             config.LED_DEFAULT_TRIGGER if default_trigger is None else default_trigger
         )
+        self._enabled: bool | None = None
+
+    def _brightness_value(self, enabled: bool) -> str:
+        return str(self._on_value if enabled else self._off_value)
+
+    def _current_enabled(self) -> bool:
+        """Read the On/Off state from sysfs when no SET has set it yet.
+
+        Used after an agent restart. While the locate trigger blinks the LED,
+        brightness only shows the blink phase, so On (the Omada default) is
+        assumed then.
+        """
+        try:
+            trigger = Path(self._trigger_path).read_text(encoding="ascii")
+            if f"[{self._locate_trigger}]" not in trigger:
+                brightness = Path(self._brightness_path).read_text(encoding="ascii")
+                return brightness.strip() != str(self._off_value)
+        except OSError:
+            pass
+        return True
 
     def validate_update(
         self,
@@ -57,11 +80,14 @@ class SysfsLedAdapter:
             errors.append("WiFi control LED reconciliation is not implemented")
         if update.led is None:
             return tuple(errors)
-        if (
-            (update.led.enabled is not None or update.led.locate is not None)
-            and not capabilities.supports_led_control
-        ):
-            errors.append("LED control requested but platform capability is disabled")
+        if not capabilities.supports_led_control:
+            # The controller includes led.enable in every full SET even when the
+            # agent does not advertise the "led" component, so it is treated as a
+            # passive domain. An explicit locate request is still rejected so the
+            # controller does not report a locate that never happens.
+            if update.led.locate is not None:
+                errors.append("LED locate requested but platform capability is disabled")
+            return tuple(dict.fromkeys(errors))
         if update.led.enabled is not None and not self._brightness_path:
             errors.append("LED brightness path is not configured")
         if update.led.locate is not None and not self._trigger_path:
@@ -78,27 +104,45 @@ class SysfsLedAdapter:
             return DeviceCommandResult(applied=False, error="; ".join(errors))
         if update.led is None:
             return DeviceCommandResult(applied=True, changed=False)
-        changed = False
-        if update.led.enabled is not None:
-            value = self._on_value if update.led.enabled else self._off_value
+        if not capabilities.supports_led_control:
+            if update.led.enabled is not None:
+                log.warning(
+                    "Ignoring led.enable=%s: LED control capability is disabled "
+                    "(set OMADA_LED_BRIGHTNESS_PATH to enable it)",
+                    update.led.enabled,
+                )
+            return DeviceCommandResult(applied=True, changed=False)
+        enabled = update.led.enabled
+        if enabled is not None:
+            self._enabled = enabled
+        # Linux resets brightness to 0 when a trigger is set to "none", and a
+        # brightness of 0 cancels a blinking trigger. So while locating, set
+        # brightness before the trigger; when locating stops, restore the
+        # trigger first and then the last On/Off setting.
+        steps: list[tuple[str, str]] = []
+        if update.led.locate is True:
+            if enabled is not None:
+                steps.append(("brightness", self._brightness_value(enabled)))
+            steps.append(("trigger", self._locate_trigger))
+        else:
+            if update.led.locate is False:
+                steps.append(("trigger", self._default_trigger))
+                if enabled is None and self._brightness_path:
+                    enabled = (
+                        self._enabled if self._enabled is not None else self._current_enabled()
+                    )
+            if enabled is not None:
+                steps.append(("brightness", self._brightness_value(enabled)))
+        for target, value in steps:
+            path = self._brightness_path if target == "brightness" else self._trigger_path
             try:
-                Path(self._brightness_path).write_text(str(value) + "\n", encoding="ascii")
+                Path(path).write_text(str(value) + "\n", encoding="ascii")
             except OSError as exc:
                 return DeviceCommandResult(
                     applied=False,
-                    error=f"LED brightness write failed: {exc}",
+                    error=f"LED {target} write failed: {exc}",
                 )
-            changed = True
-        if update.led.locate is not None:
-            value = self._locate_trigger if update.led.locate else self._default_trigger
-            try:
-                Path(self._trigger_path).write_text(str(value) + "\n", encoding="ascii")
-            except OSError as exc:
-                return DeviceCommandResult(
-                    applied=False,
-                    error=f"LED trigger write failed: {exc}",
-                )
-            changed = True
+        changed = bool(steps)
         return DeviceCommandResult(applied=True, changed=changed)
 
 

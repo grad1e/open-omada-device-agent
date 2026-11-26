@@ -228,6 +228,19 @@ list. This prevents disconnected clients from lingering as active Omada clients.
 | `OMADA_LED_LOCATE_TRIGGER` | `timer` | Trigger value while locate is active |
 | `OMADA_LED_DEFAULT_TRIGGER` | `none` | Trigger value restored when locate stops |
 
+On OpenWrt, use the LED the image marks as its running status light. The
+device-tree alias names it: `cat /proc/device-tree/aliases/led-running` gives a
+node such as `/leds/led-0`, and `/sys/class/leds/` lists it by color, for
+example on a JioRouter AX6000 (Observed):
+
+```sh
+OMADA_LED_BRIGHTNESS_PATH=/sys/class/leds/red:status/brightness
+OMADA_LED_TRIGGER_PATH=/sys/class/leds/red:status/trigger
+```
+
+When Locate stops, the trigger is restored first and then the last On/Off
+setting, because Linux turns an LED off when its trigger is set to `none`.
+
 `wifiControlLed` is parsed but rejected because it represents hardware button
 semantics, not the LED brightness/locate state itself.
 

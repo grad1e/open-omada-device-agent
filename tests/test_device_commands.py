@@ -55,16 +55,33 @@ def test_sysfs_led_adapter_writes_configured_brightness_path(tmp_path):
     assert brightness.read_text(encoding="ascii") == "0\n"
 
 
-def test_sysfs_led_adapter_rejects_led_when_capability_is_disabled(tmp_path):
+def test_sysfs_led_adapter_ignores_led_enable_when_capability_is_disabled(tmp_path, caplog):
+    brightness = tmp_path / "brightness"
     update = parse_config_body({"led": {"enable": "on"}})
+    caplog.set_level("WARNING")
 
-    result = SysfsLedAdapter(brightness_path=str(tmp_path / "brightness")).reconcile(
+    result = SysfsLedAdapter(brightness_path="").reconcile(
+        update,
+        _caps(supports_led_control=False),
+    )
+
+    assert result.applied is True
+    assert result.changed is False
+    assert result.error == ""
+    assert not brightness.exists()
+    assert "Ignoring led.enable" in caplog.text
+
+
+def test_sysfs_led_adapter_rejects_locate_when_capability_is_disabled(tmp_path):
+    update = parse_config_body({"led": {"locate": True}})
+
+    result = SysfsLedAdapter(trigger_path=str(tmp_path / "trigger")).reconcile(
         update,
         _caps(supports_led_control=False),
     )
 
     assert result.applied is False
-    assert "LED control requested" in result.error
+    assert "LED locate requested" in result.error
 
 
 def test_sysfs_led_adapter_rejects_locate_without_trigger_path(tmp_path):
@@ -373,3 +390,119 @@ def test_build_client_rate_limit_nftables_rules_converts_kbps_to_bytes_per_secon
 
     assert "limit rate over 2000 bytes/second drop" in rules
     assert "limit rate over 1000 bytes/second drop" in rules
+
+
+class _KernelLed:
+    """Models Linux sysfs LED rules: trigger "none" turns the LED off and a
+    brightness of 0 cancels a blinking trigger."""
+
+    def __init__(self, tmp_path):
+        self.brightness_path = tmp_path / "brightness"
+        self.trigger_path = tmp_path / "trigger"
+        self.brightness = "1"
+        self.trigger = "none"
+
+    def install(self, monkeypatch):
+        import open_omada_device_agent.adapters.outbound.openwrt.device_commands as module
+
+        led = self
+
+        class _Path:
+            def __init__(self, path):
+                self.path = str(path)
+
+            def write_text(self, text, encoding=None):
+                value = text.strip()
+                if self.path == str(led.trigger_path):
+                    led.trigger = value
+                    if value == "none":
+                        led.brightness = "0"
+                else:
+                    led.brightness = value
+                    if value == "0":
+                        led.trigger = "none"
+
+            def read_text(self, encoding=None):
+                if self.path == str(led.trigger_path):
+                    return " ".join(
+                        f"[{name}]" if name == led.trigger else name
+                        for name in ("none", "timer", "default-on")
+                    ) + "\n"
+                return led.brightness + "\n"
+
+        monkeypatch.setattr(module, "Path", _Path)
+
+    def adapter(self):
+        return SysfsLedAdapter(
+            brightness_path=str(self.brightness_path),
+            trigger_path=str(self.trigger_path),
+            on_value="1",
+            off_value="0",
+            locate_trigger="timer",
+            default_trigger="none",
+        )
+
+
+def test_led_stays_on_after_locate_stops(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+    adapter = led.adapter()
+
+    adapter.reconcile(parse_config_body({"led": {"enable": "on", "locate": True}}), _caps())
+    assert (led.trigger, led.brightness) == ("timer", "1")
+
+    # Lab capture: the stop request repeats enable=on with locate=false.
+    adapter.reconcile(parse_config_body({"led": {"enable": "on", "locate": False}}), _caps())
+    assert (led.trigger, led.brightness) == ("none", "1")
+
+
+def test_locate_stop_without_enable_restores_the_last_led_setting(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+    adapter = led.adapter()
+
+    adapter.reconcile(parse_config_body({"led": {"enable": "on"}}), _caps())
+    adapter.reconcile(parse_config_body({"led": {"locate": True}}), _caps())
+    adapter.reconcile(parse_config_body({"led": {"locate": False}}), _caps())
+
+    assert (led.trigger, led.brightness) == ("none", "1")
+
+
+def test_locate_keeps_blinking_when_the_led_is_set_off(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+
+    led.adapter().reconcile(
+        parse_config_body({"led": {"enable": "off", "locate": True}}), _caps()
+    )
+
+    assert led.trigger == "timer"
+
+
+def test_locate_stop_after_agent_restart_keeps_the_led_on(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+    led.trigger, led.brightness = "timer", "0"  # restarted mid-blink
+
+    led.adapter().reconcile(parse_config_body({"led": {"locate": False}}), _caps())
+
+    assert (led.trigger, led.brightness) == ("none", "1")
+
+
+def test_locate_stop_after_agent_restart_keeps_an_off_led_off(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+    led.trigger, led.brightness = "none", "0"
+
+    led.adapter().reconcile(parse_config_body({"led": {"locate": False}}), _caps())
+
+    assert (led.trigger, led.brightness) == ("none", "0")
+
+
+def test_locate_stop_after_agent_restart_reads_an_on_led(tmp_path, monkeypatch):
+    led = _KernelLed(tmp_path)
+    led.install(monkeypatch)
+
+    led.adapter().reconcile(parse_config_body({"led": {"locate": False}}), _caps())
+
+    assert (led.trigger, led.brightness) == ("none", "1")
