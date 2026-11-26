@@ -14,6 +14,7 @@ from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
 from ..adapters.outbound.openwrt.network_check import OpenWrtNetworkCheck
 from ..adapters.outbound.openwrt.snmp import OpenWrtSnmpAdapter
+from ..adapters.outbound.openwrt.dhcp_fallback import DhcpFallback, start_dhcp_fallback
 from ..adapters.outbound.openwrt.ip_settings import OpenWrtIpSettings
 from ..application.notifications import OutboundNotifications
 from ..adapters.outbound.openwrt.client_snoop import BridgeClientSnooper
@@ -107,6 +108,10 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         controller_endpoint=controller_endpoint,
         on_address_changed=session_reset.set,
     )
+    if capabilities.supports_ip_settings:
+        start_dhcp_fallback(
+            DhcpFallback(interface=settings.openwrt_lan_interface, on_change=session_reset.set)
+        )
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(
