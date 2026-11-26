@@ -125,6 +125,8 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- Client snooping no longer logs an error with a traceback when the LAN
+  bridge goes down for a moment during a network reload.
 - After an IP Settings change or a DHCP fallback switch, the controller is
   shown the AP's new address at once instead of the old one for up to a
   minute.

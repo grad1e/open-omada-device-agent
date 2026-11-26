@@ -277,3 +277,31 @@ def test_filter_passes_only_the_packets_the_parser_uses():
 
     assert [_filter_accepts(frame) for frame in accepted] == [True] * len(accepted)
     assert [_filter_accepts(frame) for frame in rejected] == [False] * len(rejected)
+
+
+def test_snooping_shrugs_off_a_bridge_going_down(monkeypatch, caplog):
+    import errno
+
+    import open_omada_device_agent.adapters.outbound.openwrt.client_snoop as snoop
+
+    class _Stop(BaseException):
+        pass
+
+    class _DownSocket:
+        def recv(self, _size):
+            raise OSError(errno.ENETDOWN, "Network is down")
+
+    calls = []
+
+    def fake_select(sockets, *_a):
+        calls.append(1)
+        if len(calls) > 1:
+            raise _Stop
+        return sockets, [], []
+
+    monkeypatch.setattr(snoop.select, "select", fake_select)
+    with pytest.raises(_Stop):
+        snoop.BridgeClientSnooper("off")._run([_DownSocket()])
+
+    assert len(calls) == 2  # kept going without the 5 s error back-off
+    assert "snooping error" not in caplog.text

@@ -521,6 +521,11 @@ class BridgeClientSnooper:
                         frame = sock.recv(65535)
                     except BlockingIOError:
                         continue
+                    except OSError as exc:
+                        # The bridge goes down briefly on a network reload
+                        # (IP Settings, DHCP); the socket works again after.
+                        log.debug("Client address snooping: %s", exc)
+                        continue
                     self.table.observe(parse_frame(frame))
             except Exception:  # pragma: no cover - keep the agent alive
                 log.exception("Client address snooping error")
