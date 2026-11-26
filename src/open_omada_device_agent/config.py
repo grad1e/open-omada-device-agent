@@ -1,7 +1,10 @@
 """Environment-backed runtime configuration for Open Omada Device Agent."""
 from __future__ import annotations
 
+import logging
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -102,13 +105,17 @@ def default_device_mac(
     env: dict[str, str] | None = None,
     sys_class_net: Path = Path("/sys/class/net"),
     mac_file: Path | None = None,
+    wait_seconds: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     """OMADA_DEVICE_MAC, else the remembered MAC, else the LAN bridge MAC.
 
     The bridge MAC is the one the AP's DHCP client uses, so a controller
     "Use Fixed IP Address" reservation for the AP matches its DHCP requests.
     The first MAC picked is saved to ``mac_file`` so the AP keeps its identity
-    even on hardware whose MAC changes at every boot.
+    even on hardware whose MAC changes at every boot. At boot the bridge may
+    not exist yet, so on OpenWrt it is awaited for up to ``wait_seconds``
+    (default 10).
     """
     env = os.environ if env is None else env
     configured = env.get("OMADA_DEVICE_MAC", "").strip()
@@ -123,7 +130,20 @@ def default_device_mac(
         return remembered
     bridge = env.get("OMADA_OPENWRT_LAN_BRIDGE", "br-lan").strip() or "br-lan"
     mac = interface_mac(bridge, sys_class_net)
+    if wait_seconds is None:
+        wait_seconds = 10.0 if Path("/etc/openwrt_release").exists() else 0.0
+    waited = 0.0
+    while mac is None and waited < wait_seconds:
+        sleep(1.0)
+        waited += 1.0
+        mac = interface_mac(bridge, sys_class_net)
     if mac is None:
+        logging.getLogger(__name__).warning(
+            "No MAC address on %s; using the placeholder %s, which every such AP "
+            "shares. Set OMADA_DEVICE_MAC to the MAC on the AP's label.",
+            bridge,
+            PLACEHOLDER_MAC,
+        )
         return PLACEHOLDER_MAC
     try:
         mac_file.write_text(mac + "\n")

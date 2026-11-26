@@ -46,12 +46,26 @@ def test_other_bridge_and_bad_saved_value(tmp_path):
     assert default_device_mac({"OMADA_OPENWRT_LAN_BRIDGE": "br-guest"}, sys, mac_file) == "02:aa:bb:00:00:02"
 
 
-def test_missing_or_zero_bridge_falls_back_to_placeholder(tmp_path):
+def test_missing_or_zero_bridge_falls_back_to_placeholder(tmp_path, caplog):
     mac_file = tmp_path / "mac"
-    assert default_device_mac({}, tmp_path / "none", mac_file) == PLACEHOLDER_MAC
+    naps = []
+    assert default_device_mac({}, tmp_path / "none", mac_file, wait_seconds=10, sleep=naps.append) == PLACEHOLDER_MAC
+    assert sum(naps) == 10.0  # waited for the bridge before giving up
+    assert "OMADA_DEVICE_MAC" in caplog.text
     sys = _sys(tmp_path, **{"br-lan": "00:00:00:00:00:00"})
-    assert default_device_mac({}, sys, mac_file) == PLACEHOLDER_MAC
+    assert default_device_mac({}, sys, mac_file, wait_seconds=0) == PLACEHOLDER_MAC
     assert not mac_file.exists()  # the placeholder is never remembered
+
+
+def test_waits_for_a_bridge_that_appears_at_boot(tmp_path):
+    sys = tmp_path / "net"
+
+    def bridge_comes_up(_seconds):
+        if not sys.exists():
+            _sys(tmp_path, **{"br-lan": "02:aa:bb:00:00:03"})
+
+    mac = default_device_mac({}, sys, tmp_path / "mac", wait_seconds=10, sleep=bridge_comes_up)
+    assert mac == "02:aa:bb:00:00:03"
 
 
 def test_random_mac_detected_through_bridge_port(tmp_path):
