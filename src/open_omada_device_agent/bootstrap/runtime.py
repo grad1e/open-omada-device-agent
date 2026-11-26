@@ -12,6 +12,7 @@ from ..adapters.outbound.openwrt.capabilities import detect_platform_capabilitie
 from ..adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
 from ..adapters.outbound.openwrt.rogue_ap_scan import OpenWrtRogueApScanner
 from ..adapters.outbound.openwrt.network_check import OpenWrtNetworkCheck
+from ..adapters.outbound.openwrt.snmp import OpenWrtSnmpAdapter
 from ..application.notifications import OutboundNotifications
 from ..adapters.outbound.openwrt.client_snoop import BridgeClientSnooper
 from ..adapters.outbound.openwrt.client_observations import (
@@ -124,6 +125,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 ),
                 rogue_ap_scanner,
                 OpenWrtNetworkCheck(notifications.put),
+                OpenWrtSnmpAdapter(),
             ),
             allow_ack_only_config=settings.lab_ack_control_plane_config,
         ),

@@ -6,6 +6,18 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Device Config → Services → SNMP and the site SNMP settings: the agent
+  advertises the `snmp` component when net-snmp's `snmpd` is installed and
+  writes `/etc/config/snmpd` from SET key `snmp`: Location, Contact, the
+  read-only v1/v2c community, and a read-only SNMPv3 user (MD5/SHA auth,
+  DES/AES privacy; the agent also lists component `service` 1.1 so the
+  controller sends the v3 security level and modes). snmpd runs only while
+  v1/v2c or v3 is on.
+  `OMADA_CAP_SNMP=false` turns it off.
+- `scripts/deploy-openwrt.sh` installs the OpenWrt packages the agent uses
+  (`snmpd`, `opennds`, `dnsmasq-full`, `conntrack`) with `apk` or `opkg`,
+  swapping `dnsmasq` for `dnsmasq-full` safely and leaving snmpd stopped until
+  SNMP is enabled. `--no-packages` skips this.
 - Tools → Network Check: Ping, Traceroute, DNS Lookup and ARP Table. The agent
   advertises the `ping`/`traceroute`/`dnslookup`/`arptable` components, runs
   BusyBox `ping`/`traceroute`/`nslookup` (or reads `/proc/net/arp`) in the

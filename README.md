@@ -42,6 +42,7 @@ dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
 | `SET_REQUEST` acknowledgement | 🟡 Partial; rejects unsupported keys |
 | Max clients, RSSI threshold, U-APSD | 🟡 Per radio from Wireless → Advanced; OFDMA is always on (checkbox hidden; OpenWrt has no switch for it) |
 | Network Check (Tools) | 🟡 Ping, Traceroute, DNS Lookup and ARP Table run on the AP with BusyBox; output streams into the controller's Device Output |
+| SNMP (Services) | 🟡 Location, Contact, v1/v2c community and a read-only SNMPv3 user written to OpenWrt's `snmpd`; snmpd runs only while SNMP is on |
 | Interference Detection scan | 🟡 On-demand neighbour scan with `iw`; shows in Statistics → Interference Detection |
 | Radio/SSID configuration | 🟡 OpenWrt UCI adapter: SSIDs, wireless mode, channel, width (20–160 MHz), Tx power up to the radio's limit, Auto channel range, Wi-Fi country (`OMADA_WIFI_COUNTRY`) |
 | SSID VLAN configuration | 🟡 Opt-in OpenWrt UCI adapter |
@@ -246,6 +247,10 @@ opkg update
 opkg install opennds dnsmasq-full conntrack
 ```
 
+`scripts/deploy-openwrt.sh` installs these for you, plus `snmpd`
+(`snmpd-ssl` with apk) for Services → SNMP. snmpd stays stopped until SNMP is
+turned on in the controller.
+
 The agent auto-detects portal capability when `opennds` and `ndsctl` are
 available. If `OMADA_CAP_PORTAL=false` is set in `.env`, that explicit override
 disables portal acceptance.
@@ -335,7 +340,9 @@ AGENT_ARGS="--debug --dump-tx" \
 scripts/deploy-openwrt.sh
 ```
 
-The script syncs the source tree with `tar` over SSH, preserves the remote
+The script installs the OpenWrt packages the agent uses (`snmpd`, `opennds`,
+`dnsmasq-full`, `conntrack`) with `apk` or `opkg`; pass `--no-packages` to
+skip that. It syncs the source tree with `tar` over SSH, preserves the remote
 `.env`, stops the current `/usr/bin/open-omada-agent` process, starts it again,
 and prints the last lines from `/tmp/open-omada-agent.log`.
 When the `open-omada-agent` service is installed and enabled, the script

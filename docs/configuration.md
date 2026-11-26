@@ -124,6 +124,7 @@ OMADA_TLS_CA_FILE=/etc/open-omada/controller-ca.pem
 | `OMADA_CAP_LED` | path-based | Enable sysfs LED brightness/trigger writes |
 | `OMADA_CAP_CLIENT_OPERATIONS` | auto on OpenWrt with `ubus` | Enable supported client control commands |
 | `OMADA_CAP_CLIENT_RATE_LIMITS` | `false` | Enable nftables client rate-limit enforcement |
+| `OMADA_CAP_SNMP` | `true` on OpenWrt when `snmpd` is installed | Apply Services → SNMP to `/etc/config/snmpd` |
 | `OMADA_CAP_ROGUE_AP_SCAN` | `true` on OpenWrt when `iw` lists the radios | Answer the controller's Interference Detection scan with `iw dev <ap> scan ap-force` |
 
 ## OpenWrt startup bootstrap
@@ -187,6 +188,9 @@ For older OpenWrt package feeds:
 opkg update
 opkg install opennds dnsmasq-full conntrack
 ```
+
+`scripts/deploy-openwrt.sh` runs these installs (and adds `snmpd`) unless
+given `--no-packages`.
 
 openNDS treats every device on the bridge it guards as a portal client,
 including the upstream router. On an AP that is not the router (a "dumb AP",

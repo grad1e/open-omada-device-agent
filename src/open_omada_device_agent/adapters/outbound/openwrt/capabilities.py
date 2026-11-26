@@ -104,6 +104,12 @@ def detect_platform_capabilities(
         ),
         # Tools -> Network Check runs BusyBox ping/traceroute/nslookup.
         supports_network_check=_feature(values, "OMADA_CAP_NETWORK_CHECK", openwrt),
+        # Config -> Services -> SNMP writes /etc/config/snmpd for net-snmp.
+        supports_snmp=_feature(
+            values,
+            "OMADA_CAP_SNMP",
+            openwrt and has_uci and which("snmpd") is not None,
+        ),
         radio_hardware=radio_hardware,
     )
 
@@ -128,6 +134,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_client_rate_limits",
         "supports_rogue_ap_scan",
         "supports_network_check",
+        "supports_snmp",
     ):
         if getattr(capabilities, field):
             enabled.append(field.removeprefix("supports_"))

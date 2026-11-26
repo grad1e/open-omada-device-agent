@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..contexts.clients.domain import ClientAuthConfig, ClientControlOperation, ClientRateConfig
-from ..contexts.device.domain import LedConfig, NetworkCheckRequest, WifiControlLedConfig
+from ..contexts.device.domain import LedConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig
 from ..contexts.networking.domain import ManagementVlan
 from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from ..contexts.wireless.domain import RadioAdvancedConfig, RadioConfig, WirelessNetwork
@@ -25,6 +25,7 @@ class ApplyDeviceConfigurationCommand:
     client_rate_config: ClientRateConfig | None = None
     rogue_ap_scan: bool = False
     network_checks: tuple[NetworkCheckRequest, ...] = ()
+    snmp: SnmpConfig | None = None
     radio_advanced: tuple[RadioAdvancedConfig, ...] = ()
     passive_keys: tuple[str, ...] = ()
     ack_only_keys: tuple[str, ...] = ()

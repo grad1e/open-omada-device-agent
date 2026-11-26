@@ -246,9 +246,10 @@ def test_parse_initial_controller_defaults_as_passive_config():
         "logSetting",
         "macFilterGlobal",
         "schedulerGlobal",
-        "snmp",
         "ssh",
     )
+    # SNMP is applied by its own command port (snmpd stays off here).
+    assert update.snmp is not None and not update.snmp.enabled
 
 
 def test_parse_scheduler_as_passive_and_wireless_advanced_as_radio_advanced():

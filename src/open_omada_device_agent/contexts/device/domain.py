@@ -1,7 +1,7 @@
 """Static device identity and profile contracts."""
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
-from ...shared.domain import MacAddress
+from ...shared.domain import MacAddress, SecretValue
 
 @dataclass(frozen=True)
 class DeviceIdentity:
@@ -21,6 +21,33 @@ class NetworkCheckRequest:
     dest: str | None = None
     count: int | None = None
     packet_size: int | None = None
+
+
+# SNMPv3 enums used by the controller UI (Config -> Services -> SNMP).
+SNMP_SECURITY_LEVELS = {0: "noAuthNoPriv", 1: "authNoPriv", 2: "authPriv"}
+SNMP_AUTH_MODES = {1: "MD5", 2: "SHA"}
+SNMP_PRIVACY_MODES = {1: "DES", 2: "AES"}
+
+
+@dataclass(frozen=True)
+class SnmpConfig:
+    """SET key ``snmp``: SNMP agent settings (read-only access, as on an EAP)."""
+
+    location: str = ""
+    contact: str = ""
+    v1v2c_enabled: bool = False
+    community: SecretValue | None = field(default=None, repr=False)
+    v3_enabled: bool = False
+    v3_username: str = ""
+    v3_security_level: int = 1
+    v3_auth_mode: int = 1
+    v3_password: SecretValue | None = field(default=None, repr=False)
+    v3_privacy_mode: int = 1
+    v3_privacy_password: SecretValue | None = field(default=None, repr=False)
+
+    @property
+    def enabled(self) -> bool:
+        return self.v1v2c_enabled or self.v3_enabled
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from .....application.commands import ApplyDeviceConfigurationCommand
 from .....contexts.clients.domain import (
     ClientAuthConfig, ClientControlOperation, ClientRateConfig, ClientRateLimit,
 )
-from .....contexts.device.domain import LedConfig, NetworkCheckRequest, WifiControlLedConfig
+from .....contexts.device.domain import LedConfig, NetworkCheckRequest, SnmpConfig, WifiControlLedConfig
 from .....contexts.networking.domain import ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
@@ -62,7 +62,6 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
     "logSetting",
     "macFilterGlobal",
     "schedulerGlobal",
-    "snmp",
     "ssh",
 }
 
@@ -93,6 +92,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "portalConfigList",
     "portalFreePolicyConfig",
     "rogueApScan",
+    "snmp",
     "wifiControlLed",
 } | set(NETWORK_CHECK_KEYS)
 
@@ -186,6 +186,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         client_rate_config=client_rate_config,
         rogue_ap_scan=body.get("rogueApScan") is not None,
         network_checks=_parse_network_checks(body),
+        snmp=_parse_snmp(body.get("snmp")),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
@@ -193,6 +194,38 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         raw_body=dict(body),
     )
 
+
+
+def _parse_snmp(raw: Any) -> SnmpConfig | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, "snmp")
+
+    def text(key: str) -> str:
+        value = data.get(key)
+        return "" if value is None else str(value)
+
+    def secret(key: str) -> SecretValue | None:
+        value = text(key)
+        return SecretValue(value) if value else None
+
+    def number(key: str, default: int) -> int:
+        value = _optional_int(data.get(key))
+        return default if value is None else value
+
+    return SnmpConfig(
+        location=text("location"),
+        contact=text("contact"),
+        v1v2c_enabled=bool(_optional_bool(data.get("v1v2cEnable"))),
+        community=secret("community"),
+        v3_enabled=bool(_optional_bool(data.get("v3Enable"))),
+        v3_username=text("v3Username"),
+        v3_security_level=number("v3SecurityLevel", 1),
+        v3_auth_mode=number("v3AuthMode", 1),
+        v3_password=secret("v3Password"),
+        v3_privacy_mode=number("v3PrivacyMode", 1),
+        v3_privacy_password=secret("v3PrivacyPassword"),
+    )
 
 
 def _parse_network_checks(body: Mapping[str, Any]) -> tuple[NetworkCheckRequest, ...]:

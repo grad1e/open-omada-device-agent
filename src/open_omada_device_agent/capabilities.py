@@ -72,4 +72,10 @@ def ap_components_v2(
         components.update(
             {"ping": "1.0", "traceroute": "1.0", "dnslookup": "1.0", "arptable": "1.0"}
         )
+    if capabilities.supports_snmp:
+        # Controller 6.3.0.111 SET_SNMP component; the SET key is ``snmp``.
+        # ``service`` >= 1.1 (ApImage.supportSnmpV3Plus) makes the controller
+        # keep the SNMPv3 security level, auth/privacy modes and privacy
+        # password; below that it sends only the v3 username and password.
+        components.update({"snmp": "1.0", "service": "1.1"})
     return components

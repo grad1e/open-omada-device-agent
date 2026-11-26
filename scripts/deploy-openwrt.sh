@@ -9,6 +9,7 @@ AGENT_ARGS="${AGENT_ARGS:---debug}"
 LOG_FILE="${LOG_FILE:-/tmp/open-omada-agent.log}"
 SSH_OPTS="${SSH_OPTS:--o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/openomada_known_hosts}"
 RESTART=1
+INSTALL_PACKAGES="${INSTALL_PACKAGES:-1}"
 
 usage() {
     cat <<'EOF'
@@ -20,10 +21,13 @@ Options:
   --agent-args ARGS     Arguments passed to open-omada-agent. Default: --debug
   --log-file PATH       Remote log file. Default: /tmp/open-omada-agent.log
   --no-restart          Copy files but do not restart the agent
+  --no-packages         Do not install OpenWrt packages (snmpd, opennds,
+                        dnsmasq-full, conntrack) with apk or opkg
   -h, --help            Show this help
 
 Environment overrides:
-  OPENWRT_HOST, REMOTE_DIR, REMOTE_PYTHON, REMOTE_AGENT, AGENT_ARGS, LOG_FILE, SSH_OPTS
+  OPENWRT_HOST, REMOTE_DIR, REMOTE_PYTHON, REMOTE_AGENT, AGENT_ARGS, LOG_FILE, SSH_OPTS,
+  INSTALL_PACKAGES (0 skips the package step, like --no-packages)
 EOF
 }
 
@@ -47,6 +51,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --no-restart)
             RESTART=0
+            shift
+            ;;
+        --no-packages)
+            INSTALL_PACKAGES=0
             shift
             ;;
         -h|--help)
@@ -73,6 +81,102 @@ echo "Deploying Open Omada agent source to $OPENWRT_HOST:$REMOTE_DIR"
 # shellcheck disable=SC2086
 COPYFILE_DISABLE=1 tar --no-xattrs -C "$PROJECT_ROOT" -cf - src/open_omada_device_agent agent.py pyproject.toml README.md docs \
     | ssh $SSH_OPTS "$OPENWRT_HOST" "mkdir -p '$REMOTE_DIR' && tar -C '$REMOTE_DIR' -xf -"
+
+if [ "$INSTALL_PACKAGES" -ne 0 ]; then
+    echo "Installing OpenWrt packages (skip with --no-packages)"
+    # shellcheck disable=SC2086
+    if ! ssh $SSH_OPTS "$OPENWRT_HOST" /bin/ash -s <<'PACKAGES'
+set -eu
+
+# snmpd: Device Config -> Services -> SNMP. It stays stopped until the
+# controller enables SNMP; the agent then starts it.
+# opennds, dnsmasq-full, conntrack: captive portal.
+if command -v apk >/dev/null 2>&1; then
+    PM=apk
+    SNMPD=snmpd-ssl   # the SSL build supports SNMPv3 privacy (DES/AES)
+elif command -v opkg >/dev/null 2>&1; then
+    PM=opkg
+    SNMPD=snmpd
+else
+    echo "Warning: neither apk nor opkg found; install snmpd, opennds, dnsmasq-full and conntrack by hand" >&2
+    exit 0
+fi
+
+pm_installed() {
+    if [ "$PM" = apk ]; then
+        apk info -e "$1" >/dev/null 2>&1
+    else
+        [ -n "$(opkg list-installed "$1" 2>/dev/null)" ]
+    fi
+}
+
+had_snmpd=0
+[ -x /usr/sbin/snmpd ] && had_snmpd=1
+
+if [ "$PM" = apk ]; then
+    apk update >/dev/null
+else
+    opkg update >/dev/null
+fi
+
+missing=""
+for pkg in "$SNMPD" opennds conntrack; do
+    pm_installed "$pkg" || missing="$missing $pkg"
+done
+# A package that provides /usr/sbin/snmpd (e.g. snmpd-nossl) is enough.
+if [ "$had_snmpd" -eq 1 ]; then
+    missing=$(echo "$missing" | sed "s/ $SNMPD//")
+fi
+if [ -n "$missing" ]; then
+    echo "Installing:$missing"
+    if [ "$PM" = apk ]; then
+        # shellcheck disable=SC2086
+        apk add $missing
+    else
+        # shellcheck disable=SC2086
+        opkg install $missing
+    fi
+fi
+
+# dnsmasq-full replaces dnsmasq (both ship /usr/sbin/dnsmasq). apk swaps them
+# in one transaction after downloading. opkg cannot, and removing dnsmasq stops
+# local DNS, so download the package before removing dnsmasq.
+if ! pm_installed dnsmasq-full; then
+    echo "Replacing dnsmasq with dnsmasq-full"
+    dir=/tmp/open-omada-packages
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    cp /etc/config/dhcp "$dir/dhcp.config" 2>/dev/null || true
+    if [ "$PM" = apk ]; then
+        apk add dnsmasq-full
+    else
+        (cd "$dir" && opkg download dnsmasq-full >/dev/null)
+        pkgfile=$(ls "$dir"/dnsmasq-full*.ipk 2>/dev/null | head -n 1)
+        if [ -z "$pkgfile" ]; then
+            echo "Warning: could not download dnsmasq-full; keeping dnsmasq" >&2
+        else
+            pm_installed dnsmasq && opkg remove dnsmasq
+            opkg install "$pkgfile"
+        fi
+    fi
+    if [ ! -f /etc/config/dhcp ] && [ -f "$dir/dhcp.config" ]; then
+        cp "$dir/dhcp.config" /etc/config/dhcp
+    fi
+    /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+    rm -rf "$dir"
+fi
+
+if [ "$had_snmpd" -eq 0 ] && [ -x /etc/init.d/snmpd ]; then
+    /etc/init.d/snmpd stop >/dev/null 2>&1 || true
+    /etc/init.d/snmpd disable >/dev/null 2>&1 || true
+    echo "snmpd installed; it starts when SNMP is enabled in the controller"
+fi
+echo "Packages ready: $SNMPD opennds dnsmasq-full conntrack"
+PACKAGES
+    then
+        echo "Warning: package step failed (no internet on the AP?); deploying anyway" >&2
+    fi
+fi
 
 if [ "$RESTART" -eq 0 ]; then
     echo "Copied source. Restart skipped by --no-restart."
