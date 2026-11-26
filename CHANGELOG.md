@@ -123,6 +123,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- At boot on OpenWrt the agent waits up to 10 seconds for the LAN bridge
+  before picking the device MAC, and warns when it has to use the shared
+  placeholder MAC.
 - IP Settings: when the watchdog cannot restore `/etc/config/network`, it
   keeps the backup and logs "IP Settings rollback FAILED" instead of marking
   the change as rolled back and deleting the backup.
