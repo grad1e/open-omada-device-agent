@@ -49,15 +49,19 @@ RANDOM_MAC = "1"  # /sys/class/net/<if>/addr_assign_type: NET_ADDR_RANDOM
 
 
 def _valid_mac(value: str) -> str | None:
-    mac = value.strip().lower()
-    parts = mac.split(":")
-    if len(parts) != 6 or any(len(p) != 2 for p in parts) or mac == "00:00:00:00:00:00":
+    """``value`` as ``aa:bb:cc:dd:ee:ff``, or None. Accepts ``:``, ``-`` or no separator."""
+    raw = value.strip().lower()
+    parts = raw.replace("-", ":").split(":") if (":" in raw or "-" in raw) else [
+        raw[i : i + 2] for i in range(0, len(raw), 2)
+    ]
+    if len(parts) != 6 or any(len(p) != 2 for p in parts):
         return None
     try:
         bytes.fromhex("".join(parts))
     except ValueError:
         return None
-    return mac
+    mac = ":".join(parts)
+    return None if mac == "00:00:00:00:00:00" else mac
 
 
 def interface_mac(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> str | None:
@@ -120,7 +124,13 @@ def default_device_mac(
     env = os.environ if env is None else env
     configured = env.get("OMADA_DEVICE_MAC", "").strip()
     if configured:
-        return configured
+        mac = _valid_mac(configured)
+        if mac is None:
+            raise ValueError(
+                f"OMADA_DEVICE_MAC={configured!r} is not a MAC address; "
+                "use the form 02:aa:bb:cc:dd:ee"
+            )
+        return mac
     mac_file = DEVICE_MAC_FILE if mac_file is None else mac_file
     try:
         remembered = _valid_mac(mac_file.read_text())

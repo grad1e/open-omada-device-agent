@@ -123,6 +123,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- `OMADA_DEVICE_MAC` accepts the label form (`02-AA-BB-CC-DD-EE` or
+  `02AABBCCDDEE`) and is lower-cased; an invalid value now stops the agent
+  with a clear error instead of being sent to the controller as is.
 - At boot on OpenWrt the agent waits up to 10 seconds for the LAN bridge
   before picking the device MAC, and warns when it has to use the shared
   placeholder MAC.
