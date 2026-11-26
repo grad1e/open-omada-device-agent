@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 
-from . import __version__, discovery
-from .bootstrap import AgentSettings, build_runtime
+from . import __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="delete local managed-reconnect state and force discovery for this run",
     )
     parser.add_argument("--debug", action="store_true", help="enable debug logging")
+    parser.add_argument(
+        "--workdir",
+        metavar="DIR",
+        help="change to DIR before loading .env and the managed state file",
+    )
     return parser
 
 
@@ -45,6 +50,17 @@ def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     log = logging.getLogger("open_omada.cli")
+
+    if args.workdir:
+        try:
+            os.chdir(args.workdir)
+        except OSError as exc:
+            log.error("cannot use --workdir %s: %s", args.workdir, exc)
+            raise SystemExit(2) from exc
+
+    # Imported after --workdir: configuration reads .env when it is imported.
+    from . import discovery
+    from .bootstrap import AgentSettings, build_runtime
 
     try:
         settings = AgentSettings.from_environment()

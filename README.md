@@ -163,6 +163,23 @@ The legacy launcher is retained for migration:
 python agent.py --dump-tx
 ```
 
+To start the agent at boot on OpenWrt (with restart after a crash), install
+the procd service from the checkout that holds your `.env`:
+
+```bash
+cp scripts/openwrt/open-omada-agent.init /etc/init.d/open-omada-agent
+chmod +x /etc/init.d/open-omada-agent
+/etc/init.d/open-omada-agent enable
+/etc/init.d/open-omada-agent start
+```
+
+Edit `AGENT_DIR` and `AGENT_ARGS` at the top of the script if your checkout is
+not `/root/open-omada-device-agent`. The service starts the agent with
+`--workdir "$AGENT_DIR"`, which loads `.env` and the managed state file from
+that folder. Output goes to the system log; read it with
+`logread -e open_omada`. Add `--debug` to `AGENT_ARGS` only while
+troubleshooting. Restart with `/etc/init.d/open-omada-agent restart`.
+
 ## Runtime behavior
 
 A first-time device follows the discovery and adoption path. After successful
@@ -289,6 +306,9 @@ scripts/deploy-openwrt.sh
 The script syncs the source tree with `tar` over SSH, preserves the remote
 `.env`, stops the current `/usr/bin/open-omada-agent` process, starts it again,
 and prints the last lines from `/tmp/open-omada-agent.log`.
+When the `open-omada-agent` service is installed and enabled, the script
+restarts the service instead, so procd does not start a second copy; the
+service's own `AGENT_ARGS` apply and the script prints `logread -e open_omada`.
 
 ## Documentation
 

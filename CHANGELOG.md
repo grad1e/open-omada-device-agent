@@ -6,6 +6,9 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- OpenWrt procd service (`scripts/openwrt/open-omada-agent.init`) to start
+  the agent at boot and restart it after a crash. `scripts/deploy-openwrt.sh`
+  restarts that service when it is enabled.
 - AP `SET_REQUEST` domain parsing for radios, SSIDs, VLAN, portal policy, LED,
   and Wi-Fi control LED keys.
 - OpenWrt UCI reconciliation for supported radio/SSID/PSK and opt-in SSID VLAN

@@ -1,0 +1,32 @@
+#!/bin/sh /etc/rc.common
+# procd service for open-omada-device-agent.
+#
+# Install:
+#   cp scripts/openwrt/open-omada-agent.init /etc/init.d/open-omada-agent
+#   chmod +x /etc/init.d/open-omada-agent
+#   /etc/init.d/open-omada-agent enable
+#   /etc/init.d/open-omada-agent start
+#
+# Edit AGENT_DIR to the checkout that holds your .env; the agent loads .env
+# from its working directory. Output goes to the system log (logd ring
+# buffer): read it with `logread -e open_omada`. Add --debug to AGENT_ARGS
+# only while troubleshooting.
+
+START=99
+STOP=10
+USE_PROCD=1
+
+AGENT_DIR=/root/open-omada-device-agent
+AGENT=/usr/bin/open-omada-agent
+AGENT_ARGS=""
+
+start_service() {
+	procd_open_instance
+	# Start the agent itself (not via sh) so logd tags its lines open-omada-agent.
+	procd_set_param command "$AGENT" --workdir "$AGENT_DIR" $AGENT_ARGS
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	# Restart after a crash: wait 5 s, stop retrying after 5 crashes in 1 hour.
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}

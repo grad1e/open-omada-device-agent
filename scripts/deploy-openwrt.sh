@@ -106,6 +106,25 @@ if ! command -v ndsctl >/dev/null 2>&1; then
     echo "Warning: ndsctl not found; openNDS portal telemetry/control will be limited" >&2
 fi
 
+SERVICE=/etc/init.d/open-omada-agent
+if [ -x "$SERVICE" ] && "$SERVICE" enabled; then
+    # procd respawns a killed agent, so a manual restart would leave two running.
+    # The service uses its own AGENT, AGENT_ARGS and logd, not this script's
+    # REMOTE_AGENT, AGENT_ARGS or LOG_FILE.
+    SERVICE_AGENT=$(sed -n "s/^AGENT=//p" "$SERVICE" | tr -d "'\"")
+    echo "Restarting the $SERVICE service (its own AGENT_ARGS apply; output in logread)"
+    "$SERVICE" restart
+    sleep 5
+    if ! ps w | grep -v grep | grep -q "${SERVICE_AGENT:-open-omada-agent}"; then
+        echo "open-omada-agent did not stay running. Last log lines:" >&2
+        logread -e open_omada 2>/dev/null | tail -80 || true
+        exit 1
+    fi
+    echo "Last log lines (logread -e open_omada):"
+    logread -e open_omada 2>/dev/null | tail -80 || true
+    exit 0
+fi
+
 agent_pids() {
     ps w | awk -v agent="$REMOTE_AGENT" '
         $1 ~ /^[0-9]+$/ && index($0, agent) && !index($0, " awk ") && !index($0, " grep ") {print $1}
