@@ -16,7 +16,7 @@ from .....contexts.networking.domain import LanIpSetting, ManagementVlan, valida
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
     MacFilterAssocRule, MacFilterChange, MacFilterListRule,
-    CaptivePortalIntent, ClientLimit, RadioAdvancedConfig, RadioBand, RadioConfig,
+    CaptivePortalIntent, ClientLimit, RadioAdvancedConfig, RadioBand, RadioConfig, RateControl,
     WirelessDhcpOption82Intent,
     WirelessNetwork, WirelessSecurity, WirelessVlanIntent, validate_ssid_name,
 )
@@ -407,6 +407,11 @@ def _parse_ssid_item(
         broadcast=_optional_bool(data.get("ssidBcast")),
         client_isolation=_optional_bool(data.get("ssidIsolation")),
         load_balance=_optional_bool(data.get("loadBalance")),
+        rate_control=(
+            RateControl.from_codes(int(data["rateCtl"]), _optional_int(data.get("manageRateCtl")) or 0)
+            if data.get("rateCtl") is not None
+            else None
+        ),
         vlan=WirelessVlanIntent(
             vlan_id=vlan_id,
             vlan_pool_ids=tuple(str(value) for value in data.get("vlanPoolIds") or ()),
