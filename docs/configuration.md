@@ -41,7 +41,7 @@ characters and Site IDs 24 characters.
 | `OMADA_DEVICE_MAC` | MAC of `OMADA_OPENWRT_LAN_BRIDGE` (`br-lan`) at first start, then the value saved in `OMADA_DEVICE_MAC_FILE`; `02:00:00:00:00:01` when that interface is missing. A set value may use `:`, `-` or no separator; an invalid one stops the agent |
 | `OMADA_DEVICE_MAC_FILE` | `.omada-device-mac` (in the agent directory). Delete it to pick up a new bridge MAC |
 | `OMADA_DEVICE_NAME` | `OpenOmada-AP` |
-| `OMADA_DEVICE_MODEL` | `EAP110` |
+| `OMADA_DEVICE_MODEL` | `EAP110`. `auto` picks the closest Omada AP model from the radios (see below) |
 | `OMADA_DEVICE_MODEL_VERSION` | `4.0` |
 | `OMADA_DEVICE_HARDWARE_VERSION` | `4.0` |
 | `OMADA_DEVICE_FIRMWARE_VERSION` | `5.0.4` |
@@ -59,6 +59,24 @@ third-party service.
 
 Controller 6.2.14.11 and 6.3.0.111 display the advertised value as-is in the
 device list (Observed).
+
+### Choosing the model automatically
+
+`OMADA_DEVICE_MODEL=auto` reads the radios from `iw list` at start and picks
+the Omada AP model that is closest to them, also setting the model version
+(`OMADA_DEVICE_MODEL_VERSION` is then ignored). A model must have the same
+bands. Among those the agent prefers one that claims nothing the hardware
+cannot do (a newer Wi-Fi generation, more spatial streams, wider channels),
+then the one that falls short of it least, then a plain model over an
+`-Outdoor`/`-Wall`/... variant, then the closest transmit power. The log names
+the choice: `OMADA_DEVICE_MODEL=auto: using EAP683 UR 1.0 (exact match)`.
+With a fixed model the agent logs the closest model instead, as a hint.
+
+The models come from a table of a few facts per model, generated from
+Controller 6.3.0.111's model templates (see NOTICE). Validated: the lab AP
+(dual-band Wi-Fi 6, 4×4, 160 MHz) gets EAP683 UR, the model chosen by hand
+before. Changing the model of an adopted AP needs a Forget and a new adoption
+in the controller.
 
 ## Device Account authentication
 

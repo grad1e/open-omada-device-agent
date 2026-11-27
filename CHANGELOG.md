@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- `OMADA_DEVICE_MODEL=auto` picks the Omada AP model closest to the AP's
+  radios (bands, spatial streams, widest channel, Wi-Fi generation, transmit
+  power) from a table generated from the controller's model templates. With a
+  fixed model the closest one is logged as a hint. The table holds only those
+  facts; `scripts/export-omada-models.sh` and `scripts/gen_omada_models.py`
+  regenerate it, and NOTICE and AGENTS.md rule 1 describe what it may hold.
 - README: "Install on an OpenWrt access point", a step-by-step guide from a
   freshly reset OpenWrt device to an adopted AP.
 - `scripts/deploy-openwrt.sh --env FILE` copies a local settings file to the AP
