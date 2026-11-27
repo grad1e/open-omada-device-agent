@@ -32,6 +32,8 @@ welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
   reconnects by itself after a restart or a lost connection.
 - **Wi-Fi:** SSIDs, channel (including Auto), width up to 160 MHz, transmit
   power, wireless mode, country, client limit and minimum RSSI.
+- **SSID options:** WPA2/WPA3 security, PMF, 802.11r, MAC filtering, WLAN
+  schedules and 802.11 rate control.
 - **Monitoring:** clients with IP and name, traffic, live channel and channel
   use per radio.
 - **Tools:** Locate (blinks an LED), Network Check (ping, traceroute, DNS,
@@ -39,8 +41,9 @@ welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Optional:** IP Settings, SNMP, LLDP, SSID and management VLANs, and a captive
   portal on a separate guest network.
 
-Not yet: guest logout from the portal, firmware upgrade, mesh, and
-switch or gateway devices. The full list is in
+Not yet: guest logout from the portal, band steering, Prohibit Wi-Fi
+Sharing, conditional SSID broadcast, firmware upgrade, mesh, and switch or
+gateway devices. The full list is in
 [docs/protocol-status.md](docs/protocol-status.md).
 
 ## Install
