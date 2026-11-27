@@ -229,3 +229,55 @@ def test_portal_runtime_noops_for_free_policy_without_portal_wlan():
     assert result.applied is True
     assert result.changed is False
     assert runner.calls == []
+
+
+@dataclass
+class UplinkGatewayRunner(RecordingRunner):
+    """openNDS gateway is br-lan, which also carries the default route."""
+
+    def run(self, args, *, input_text=None):
+        command = tuple(args)
+        self.calls.append((command, input_text))
+        if command == ("uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"):
+            return CommandResult(returncode=0, stdout="br-lan\n")
+        if command[:3] == ("ip", "-4", "route"):
+            return CommandResult(returncode=0, stdout="default via 192.0.2.1 dev br-lan\n")
+        return CommandResult(returncode=0)
+
+
+def test_portal_runtime_skips_free_policy_when_opennds_would_capture_the_uplink():
+    # A full sync to an AP without a portal SSID still carries the free policy.
+    update = parse_config_body(
+        {
+            "portalFreePolicyConfig": {"urlPortalFreePolicy": [{"url": "portal.example.com"}]},
+            "ssid_2G": {"ssid": [{"ssidName": "corp"}]},
+        }
+    )
+    runner = UplinkGatewayRunner()
+
+    result = OpenWrtPortalRuntime(runner, interface="").reconcile(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert result.applied is True
+    assert result.changed is False
+    assert not any(command[0] in ("tee", "/etc/init.d/opennds") for command, _ in runner.calls)
+    assert not any(command[:2] == ("uci", "add_list") for command, _ in runner.calls)
+
+
+def test_portal_runtime_still_refuses_a_portal_ssid_when_opennds_is_on_the_uplink():
+    update = parse_config_body(
+        {
+            "portalFreePolicyConfig": {"urlPortalFreePolicy": [{"url": "portal.example.com"}]},
+            "ssid_2G": {"ssid": [{"ssidName": "guest", "portal": True}]},
+        }
+    )
+
+    result = OpenWrtPortalRuntime(UplinkGatewayRunner(), interface="").reconcile(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert result.applied is False
+    assert "uplink" in result.error

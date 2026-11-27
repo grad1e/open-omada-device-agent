@@ -117,11 +117,19 @@ class OpenNdsPortalAdapter:
     def _uplink(self) -> str | None:
         return uplink_device(self._runner, self._controller_host())
 
-    def apply(self, policy: OpenNdsPortalPolicy) -> OpenNdsPortalResult:
+    def uplink_capture_error(self) -> str | None:
+        """Why openNDS must not run here, or None when its gateway is safe."""
         interface = self._gateway_interface()
+        if not interface:
+            return None
         uplink = self._uplink()
-        if interface and (uplink is None or interface == uplink):
-            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface, uplink))
+        if uplink is None or interface == uplink:
+            return uplink_capture_message(interface, uplink)
+        return None
+
+    def apply(self, policy: OpenNdsPortalPolicy) -> OpenNdsPortalResult:
+        if error := self.uplink_capture_error():
+            return OpenNdsPortalResult(applied=False, error=error)
         delete_commands = [
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_fqdn_list"],
             ["uci", "-q", "delete", "opennds.@opennds[0].walledgarden_port_list"],
@@ -215,10 +223,8 @@ class OpenNdsPortalAdapter:
         status = self._runner.run(["ndsctl", "status"])
         if status.returncode == 0:
             return OpenNdsPortalResult(applied=True, changed=False)
-        interface = self._gateway_interface()
-        uplink = self._uplink()
-        if interface and (uplink is None or interface == uplink):
-            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface, uplink))
+        if error := self.uplink_capture_error():
+            return OpenNdsPortalResult(applied=False, error=error)
         result = self._runner.run(["/etc/init.d/opennds", "restart"])
         if result.returncode != 0:
             return OpenNdsPortalResult(
