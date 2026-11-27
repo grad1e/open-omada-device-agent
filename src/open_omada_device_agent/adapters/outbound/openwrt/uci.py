@@ -280,6 +280,8 @@ class OpenWrtUciAdapter:
         if result.returncode != 0:
             if update.mac_filter is not None:
                 log.warning("uci show wireless failed; SSIDs this SET does not rebuild keep their old MAC filter")
+            if update.wlan_bands:
+                log.warning("uci show wireless failed; 802.11 Rate Control the agent set before is not removed")
             return {}
         return parse_uci_show(result.stdout)
 
@@ -987,6 +989,14 @@ def _rate_control_errors(wlan: WirelessNetwork) -> list[str]:
         errors.append(f"unsupported 802.11 Rate Control bits {control.unknown_bits:#x}")
     if control.enabled and not _band_rates(control, wlan.band):
         errors.append(f"802.11 Rate Control on {wlan.band.value} allows no rate")
+    if (
+        control.enabled
+        and control.management_rate is not None
+        and wlan.band != RadioBand.TWO_G
+        and control.management_rate in CCK_RATES
+    ):
+        # hostapd would find no basic rate the radio can use and not start it.
+        errors.append(f"802.11 management rate {control.management_rate} kb/s does not exist on {wlan.band.value}")
     return errors
 
 
@@ -997,7 +1007,9 @@ def _rate_control_lines(
 ) -> tuple[str, ...]:
     """Radio rate options for ``band``: hostapd sets rates per radio, not per SSID."""
     wlans = [wlan for wlan in active_wlans if wlan.band == band]
-    sections = {_radio_section(wlan.band, wlan.radio_id) for wlan in wlans} or {_radio_section(band, None)}
+    sections = {_radio_section(wlan.band, wlan.radio_id) for wlan in wlans} or _band_radio_sections(
+        band, wireless_state
+    )
     lines: list[str] = []
     for section in sorted(sections):
         on_radio = [wlan for wlan in wlans if _radio_section(wlan.band, wlan.radio_id) == section]
@@ -1031,6 +1043,16 @@ def _rate_control_lines(
             lines.append(_set("wireless", section, "beacon_rate", "10"))
         lines.append(_set("wireless", section, RATE_CONTROL_OPTION, "1"))
     return tuple(lines)
+
+
+def _band_radio_sections(band: RadioBand, wireless_state: WirelessState) -> set[str]:
+    """Radios of ``band`` from their UCI ``band`` option (board radio order varies)."""
+    sections = {
+        name
+        for name, options in wireless_state.items()
+        if options.get(".type") == "wifi-device" and options.get("band") == band.value
+    }
+    return sections or {_radio_section(band, None)}
 
 
 def _radio_section(band: RadioBand, radio_id: int | None) -> str:

@@ -135,3 +135,69 @@ def test_unknown_bits_are_refused():
     result = adapter.reconcile(parse_config_body({"configVersionInc": 1, **_body(_ssid(1, 0x80000 | MIN_36))}), _caps())
 
     assert not result.applied and "Rate Control bits" in result.error
+
+
+def test_cck_management_rate_is_refused_on_5ghz():
+    adapter = OpenWrtUciAdapter(_Runner())
+    body = _body(_ssid(1, MIN_36, 0x10001), key="ssid_5G", radio_id=1)  # management 1 Mbps
+
+    result = adapter.reconcile(parse_config_body({"configVersionInc": 1, **body}), _caps())
+
+    assert not result.applied and "management rate 1000" in result.error
+
+
+def test_5ghz_management_rate_in_band_is_used():
+    body = _body(_ssid(1, MIN_36, 0x10040), key="ssid_5G", radio_id=1)  # management 12 Mbps
+
+    lines = _rate_lines(build_uci_batch(parse_config_body(body), _caps()), "radio1")
+
+    assert "add_list wireless.radio1.supported_rates='12000'" in lines
+    assert [line for line in lines if "basic_rate=" in line] == ["add_list wireless.radio1.basic_rate='12000'"]
+
+
+def test_band_without_ssids_uses_the_radio_with_that_band():
+    # A board whose 5 GHz radio is radio0.
+    state = {
+        "radio0": {".type": "wifi-device", "band": "5g", "openomada_rates": "1"},
+        "radio1": {".type": "wifi-device", "band": "2g", "openomada_rates": "1"},
+    }
+    batch = build_uci_batch(
+        parse_config_body({"ssid_5G": {"radioId": 0, "ssid": []}}), _caps(), wireless_state=state
+    )
+
+    assert "delete wireless.radio0.openomada_rates" in batch
+    assert not any("radio1" in line for line in batch)
+
+
+def test_two_radios_on_one_band_are_set_separately():
+    body = {"ssid_5G": {"radioId": 1, "ssid": [_ssid(1, MIN_36)]}}
+    other = {"ssid_5G": {"radioId": 2, "ssid": [_ssid(2, MIN_36)]}}
+    first = build_uci_batch(parse_config_body(body), _caps())
+    second = build_uci_batch(parse_config_body(other), _caps())
+
+    assert "set wireless.radio1.openomada_rates='1'" in first
+    assert "set wireless.radio2.openomada_rates='1'" in second
+
+
+def test_missing_or_bad_rate_ctl_is_ignored():
+    missing = dict(_ssid(1))
+    del missing["rateCtl"]
+    bad = dict(_ssid(1), rateCtl="")
+    words = dict(_ssid(1), rateCtl="fast")
+
+    for item in (missing, bad, words):
+        update = parse_config_body(_body(item))
+        assert update.wlans[0].rate_control is None
+        assert _rate_lines(build_uci_batch(update, _caps())) == []
+
+
+def test_failed_uci_show_warns_that_rates_stay(caplog):
+    class _NoShow(_Runner):
+        def run(self, args, *, input_text=None):
+            if args[:3] == ["uci", "-q", "show"]:
+                return CommandResult(1, "", "failed")
+            return super().run(args, input_text=input_text)
+
+    OpenWrtUciAdapter(_NoShow()).reconcile(parse_config_body({"configVersionInc": 1, **_body(_ssid(1))}), _caps())
+
+    assert "Rate Control the agent set before is not removed" in caplog.text
