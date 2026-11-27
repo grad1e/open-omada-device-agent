@@ -104,6 +104,9 @@ def uplink_capture_message(interface: str, uplink: str | None = None) -> str:
     )
 
 
+OPENNDS_DEFAULT_GATEWAY = "br-lan"
+
+
 class OpenNdsPortalAdapter:
     def __init__(
         self,
@@ -119,9 +122,9 @@ class OpenNdsPortalAdapter:
 
     def uplink_capture_error(self) -> str | None:
         """Why openNDS must not run here, or None when its gateway is safe."""
-        interface = self._gateway_interface()
-        if not interface:
-            return None
+        # Unset means openNDS falls back to its built-in default, br-lan
+        # (Inferred from the openNDS defaults), which is the uplink on a dumb AP.
+        interface = self._gateway_interface() or OPENNDS_DEFAULT_GATEWAY
         uplink = self._uplink()
         if uplink is None or interface == uplink:
             return uplink_capture_message(interface, uplink)

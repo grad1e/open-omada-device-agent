@@ -146,6 +146,11 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- A portal SSID is refused before anything is written when openNDS would run
+  on the AP's uplink. The SSID used to be written first and the SET refused
+  afterwards, leaving the SSID broadcasting with no portal in front of it.
+  An unset openNDS `gatewayinterface` now counts as `br-lan`, openNDS's
+  default, instead of skipping the uplink check.
 - A SET with an unsupported key no longer drops the supported changes in the
   same SET. Example: removing a MAC filter also sends `macFilterAssoc`, so
   the SSID change in that SET (such as turning client isolation off) was
