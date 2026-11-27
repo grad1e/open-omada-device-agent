@@ -286,3 +286,13 @@ def test_site_settings_controller_setting_is_passive_not_rejected():
 
     assert update.unhandled_keys == ()
     assert update.passive_keys == ("controllerSetting",)
+
+
+def test_ssid_repr_does_not_show_the_wifi_key():
+    update = parse_config_body(
+        {"ssid_2G": {"radioId": 0, "ssid": [{"ssidName": "lab", "pskKey": "network-passphrase"}]}}
+    )
+    wlan = update.wlans[0]
+
+    assert "network-passphrase" not in repr(wlan)
+    assert "network-passphrase" not in repr(wlan.security)

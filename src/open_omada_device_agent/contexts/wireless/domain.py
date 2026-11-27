@@ -105,7 +105,8 @@ class WirelessSecurity:
     radius_mac_auth: Mapping[str, Any] | None = None
     pmf_mode: int | None = None
     fast_roaming: bool | None = None
-    raw: Mapping[str, Any] = field(default_factory=dict)
+    # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
 @dataclass(frozen=True)
 class WirelessDhcpOption82Intent:
@@ -131,7 +132,8 @@ class CaptivePortalIntent:
     enabled: bool = False
     https_redirect: bool | None = None
     hotspot_v2: Mapping[str, Any] | None = None
-    raw: Mapping[str, Any] = field(default_factory=dict)
+    # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
 @dataclass(frozen=True)
 class WirelessNetwork:
@@ -146,7 +148,8 @@ class WirelessNetwork:
     vlan: WirelessVlanIntent
     security: WirelessSecurity
     portal: CaptivePortalIntent
-    raw: Mapping[str, Any] = field(default_factory=dict)
+    # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
 def validate_ssid_name(name: str) -> str:
     return Ssid(name).value
