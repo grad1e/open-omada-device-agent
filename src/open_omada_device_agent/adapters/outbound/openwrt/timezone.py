@@ -12,7 +12,10 @@ Daylight saving: ``dst`` carries ``enable``, ``offset`` (seconds) and the next
 ``start``/``end`` as Unix times (Observed: a London site sent the last Sundays
 of March and October 2027, 01:00 UTC). They are turned into POSIX
 ``Mm.w.d/time`` rules ("week 5" = last), so the zone keeps working after those
-dates even if the controller does not resend them.
+dates even if the controller does not resend them. If ``dst`` is missing, the
+rules already on the device are kept. Rules that are not "Nth weekday of the
+month" (for example Chile or Israel in some years) are approximated by the
+nearest such rule until the controller sends the next period.
 """
 from __future__ import annotations
 
@@ -63,8 +66,11 @@ def _dst_rules(standard: int, dst: DaylightSaving) -> tuple[str, str] | None:
     if not dst.enabled or dst.start <= 0 or dst.end <= 0 or dst.offset <= 0 or dst.offset % 900:
         return None
     # A transition is given in the local time in force just before it.
-    start = datetime.fromtimestamp(dst.start, timezone.utc) + timedelta(minutes=standard)
-    end = datetime.fromtimestamp(dst.end, timezone.utc) + timedelta(minutes=standard, seconds=dst.offset)
+    try:
+        start = datetime.fromtimestamp(dst.start, timezone.utc) + timedelta(minutes=standard)
+        end = datetime.fromtimestamp(dst.end, timezone.utc) + timedelta(minutes=standard, seconds=dst.offset)
+    except (OverflowError, OSError, ValueError):
+        return None
     return _rule(start), _rule(end)
 
 
@@ -78,6 +84,13 @@ def _rule(moment: datetime) -> str:
         hours, rest = divmod(seconds, 3600)
         rule += f"/{hours}" if not rest else f"/{hours}:{rest // 60:02d}"
     return rule
+
+
+def _same_standard(current: str, utc_offset_minutes: int) -> bool:
+    """True if the POSIX TZ ``current`` has this standard offset (with or without DST)."""
+    if current == posix_time_zone(utc_offset_minutes):
+        return True
+    return current.startswith(_name(utc_offset_minutes) + _posix_offset(utc_offset_minutes) + "<")
 
 
 class OpenWrtTimeZoneAdapter:
@@ -103,14 +116,18 @@ class OpenWrtTimeZoneAdapter:
         if not capabilities.supports_time_zone:
             log.info("Site time zone received; OMADA_CAP_TIMEZONE is off, not applied")
             return ReconciliationResult(applied=True, changed=False)
-        wanted = posix_time_zone(setting.utc_offset_minutes, setting.daylight_saving)
-        if setting.daylight_saving.enabled and "," not in wanted:
+        dst = setting.daylight_saving
+        wanted = posix_time_zone(setting.utc_offset_minutes, dst)
+        if dst is not None and dst.enabled and "," not in wanted:
             log.warning(
                 "Site daylight saving is on but unusable (%r); only the standard offset is applied",
-                setting.daylight_saving,
+                dst,
             )
         current = self._get("timezone")
         zonename = self._get("zonename")
+        if dst is None and current is not None and _same_standard(current, setting.utc_offset_minutes):
+            # No ``dst`` sent: keep the daylight-saving rules already set.
+            wanted = current
         if current == wanted and zonename is None:
             return ReconciliationResult(applied=True, changed=False)
 

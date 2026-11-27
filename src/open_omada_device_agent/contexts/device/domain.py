@@ -39,7 +39,10 @@ TIME_ZONE_BASE = 720
 
 @dataclass(frozen=True)
 class DaylightSaving:
-    """``dst`` from the controller, kept as sent until its format is known."""
+    """``dst`` from the controller: the next daylight-saving period.
+
+    ``start``/``end`` are Unix times in seconds, ``offset`` is in seconds.
+    """
 
     enabled: bool = False
     start: int = 0
@@ -49,10 +52,14 @@ class DaylightSaving:
 
 @dataclass(frozen=True)
 class TimeZoneSetting:
-    """Site time zone (``timeSetting`` + ``dst``) sent at every connect."""
+    """Site time zone (``timeSetting`` + ``dst``) sent at every connect.
+
+    ``daylight_saving`` is None when the controller sent no ``dst``: the
+    device keeps the daylight-saving rules it already has.
+    """
 
     utc_offset_minutes: int
-    daylight_saving: DaylightSaving = field(default_factory=DaylightSaving)
+    daylight_saving: DaylightSaving | None = field(default_factory=DaylightSaving)
 
 
 # SNMPv3 enums used by the controller UI (Config -> Services -> SNMP).
