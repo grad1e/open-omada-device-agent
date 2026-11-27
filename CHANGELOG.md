@@ -181,7 +181,9 @@ All notable project changes will be documented in this file.
 - Radio settings, SSIDs and telemetry used the radio number (radio0 =
   2.4 GHz), so on boards whose radio0 is 5 GHz the 2.4 GHz settings went to
   the 5 GHz radio. Radios are now matched by their UCI `band` (`ubus`
-  `config.band` for telemetry); a second 5 GHz radio is 5 GHz-2.
+  `config.band` for telemetry); a second 5 GHz radio is 5 GHz-2. Once any
+  radio has a band, telemetry leaves out a radio without one instead of
+  guessing from its name, matching the settings side.
 - A backslash in an SSID name, Wi-Fi key, 802.11r key, SNMP community or
   other UCI value was stored doubled (`pa\ss` became `pa\\ss`): libuci
   reads single-quoted values literally, so only `'` is escaped now.
