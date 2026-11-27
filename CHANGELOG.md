@@ -146,6 +146,11 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- A full config sync no longer fails on an AP without a portal SSID. Every
+  full sync carries `portalFreePolicyConfig`; when openNDS's gateway is the
+  AP's uplink, the agent now skips openNDS (and logs why) instead of
+  reporting the whole SET as failed. A portal SSID on that AP is still
+  refused.
 - A failed `ip addr add` for the DHCP fallback address is logged and tried
   again after 30 s, instead of being recorded as in use. When the fallback
   address is changed while in use, the swap happens at once (also after an

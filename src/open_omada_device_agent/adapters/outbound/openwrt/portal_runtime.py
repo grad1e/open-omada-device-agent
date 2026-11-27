@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +14,8 @@ from .uci import CommandRunner
 from ....application.contracts import PlatformCapabilities
 from .opennds import OpenNdsPortalAdapter, opennds_portal_policy_from_omada_config
 from .portal_enforcement import NftablesPortalAdapter, PortalPolicy
+
+log = logging.getLogger("open_omada.portal")
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,12 @@ class OpenWrtPortalRuntime:
                 error="portal requested but platform capability is disabled",
             )
         if capabilities.has_opennds:
+            if not needs_portal_wlan and (reason := self._opennds().uplink_capture_error()):
+                # Full syncs always carry the free policy and portal list, even
+                # on an AP without a portal SSID. With openNDS on the uplink
+                # there is nothing to enforce them on, so this is not an error.
+                log.info("Portal policy not applied to openNDS (no portal SSID): %s", reason)
+                return PortalRuntimeResult(applied=True, changed=False)
             if not needs_opennds_policy:
                 started = self._opennds().ensure_running()
                 if not started.applied:
