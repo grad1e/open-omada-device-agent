@@ -71,7 +71,8 @@ request whose CI checks pass. Nobody pushes to it directly.
 2. Commit there (see [Commit style](#commit-style)). Rewriting history with
    `git commit --fixup` and `git rebase -i --autosquash` is fine on your own
    branch until it is merged.
-3. Push the branch and open a pull request into `develop`.
+3. Push the branch to this fork (`grad1e/open-omada-device-agent`, never
+   upstream) and open a pull request into `develop` here.
 4. When CI passes, merge with **Rebase and merge**, the only method enabled.
    It keeps every commit and a linear history. The branch is deleted
    automatically.
