@@ -113,3 +113,56 @@ def test_fallback_left_by_a_previous_run_is_cleaned_up(tmp_path):
     fallback, _, _ = _fallback(tmp_path, ap)
     fallback.check()
     assert ap.ip == ["addr del 192.0.2.254/24 dev br-lan"]
+
+
+def test_failed_address_add_is_not_recorded_and_retried_later(tmp_path):
+    ap = _Ap()
+    real_run = ap.run
+    failures = [1]
+
+    def run(args, *, input_text=None):
+        if args[:4] == ["ip", "-4", "addr", "add"] and failures:
+            failures.pop()
+            ap.ip.append("failed add")
+            return CommandResult(2, "", "RTNETLINK answers: Invalid argument\n")
+        return real_run(args, input_text=input_text)
+
+    ap.run = run
+    fallback, clock, changes = _fallback(tmp_path, ap)
+    fallback.check()
+    clock["now"] = 30
+    fallback.check()
+    assert ap.ip == ["failed add"]  # no route, no state, no change event
+    assert not (tmp_path / "fallback").exists() and changes == []
+
+    clock["now"] = 35
+    fallback.check()
+    assert ap.ip == ["failed add"]  # waits another delay instead of retrying every check
+    clock["now"] = 60
+    fallback.check()
+    assert ap.ip[1:] == [
+        "addr add 192.0.2.254/24 dev br-lan",
+        "route add default via 192.0.2.1 dev br-lan metric 1000",
+    ]
+    assert changes == [60]
+
+
+def test_fallback_only_edit_swaps_the_active_address(tmp_path):
+    # DHCP -> DHCP with a new fallback address while the fallback is in use.
+    ap = _Ap()
+    fallback, clock, changes = _fallback(tmp_path, ap)
+    fallback.check()
+    clock["now"] = 30
+    fallback.check()
+
+    ap.show = FALLBACK_SHOW.replace("192.0.2.254/24", "192.0.2.253/24")
+    clock["now"] = 35
+    fallback.check()
+    assert ap.ip[2:] == [
+        "route del default via 192.0.2.1 dev br-lan metric 1000",
+        "addr del 192.0.2.254/24 dev br-lan",
+        "addr add 192.0.2.253/24 dev br-lan",
+        "route add default via 192.0.2.1 dev br-lan metric 1000",
+    ]
+    assert (tmp_path / "fallback").read_text().startswith("192.0.2.253/24 br-lan")
+    assert changes == [30, 35]
