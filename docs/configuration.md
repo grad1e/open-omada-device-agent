@@ -370,6 +370,6 @@ Override with `OMADA_STATE_FILE` when needed. The file is Git-ignored by
 default.
 
 On OpenWrt the agent also keeps `.omada-wireless-state-<mac>.json`: the MAC
-filter groups and SSID links as last applied. The controller sends MAC filter
-changes one rule at a time, so the agent needs them after a restart. Override
+filter groups, WLAN schedules and their SSID links as last applied. The
+controller sends these changes one rule at a time, so the agent needs them after a restart. Override
 with `OMADA_WIRELESS_STATE_FILE`.

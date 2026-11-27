@@ -6,6 +6,9 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- WLAN schedules (Profiles > Time Range on an SSID): the agent turns the
+  SSID off, or keeps it on only, during the time range, in the site's local
+  time. It checks once a minute while connected to the controller.
 - MAC filtering from the SSID editor: the controller's MAC groups and
   allow/deny lists are applied as `macfilter` and `maclist` on each SSID.
   Group edits update every SSID that uses the group. OUI profiles are

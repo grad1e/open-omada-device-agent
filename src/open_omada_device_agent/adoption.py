@@ -326,6 +326,21 @@ def _describe_config_update(update: ApplyDeviceConfigurationCommand) -> str:
     return " ".join(parts)
 
 
+# WLAN schedules are checked once a minute, so an SSID turns off or on up to
+# a minute after the range edge.
+SCHEDULE_TICK_SECONDS = 60.0
+
+
+def _tick(services: ManagedSessionServices) -> None:
+    tick = getattr(services.configuration, "tick", None)
+    if tick is None:
+        return
+    try:
+        tick()
+    except Exception:  # noqa: BLE001 - a schedule error must not drop the session
+        log.exception("WLAN schedule check failed")
+
+
 def _apply_site_time_zone(body: dict[str, Any], *, services: ManagedSessionServices) -> None:
     """Apply ``timeSetting``/``dst`` from SYSTEM_NEGOTIATION; never fail the session."""
     time_zone = parse_time_zone(body)
@@ -898,6 +913,7 @@ def run_v2_adoption(
             services=services,
         )
         next_inform_at = time.monotonic() + max(0.5, services.settings.inform_interval)
+        next_tick_at = time.monotonic()
 
         # The next phase is the managed-device protocol (SET/GET/INFORM/NOTIFY).
         # SET_RESPONSE is grounded in the controller's BaseConfigResponse
@@ -928,6 +944,9 @@ def run_v2_adoption(
                     services=services,
                 )
                 next_inform_at = now + max(0.5, services.settings.inform_interval)
+            if now >= next_tick_at:
+                next_tick_at = now + SCHEDULE_TICK_SECONDS
+                _tick(services)
 
             notifications = getattr(services, "notifications", None)
             for notification in notifications.drain() if notifications is not None else ():

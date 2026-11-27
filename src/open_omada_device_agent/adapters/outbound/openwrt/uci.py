@@ -10,8 +10,9 @@ import logging
 import os
 import re
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -22,6 +23,10 @@ from ....contexts.wireless.domain import (
     MacFilterChange, MacFilterPolicy, MacFilterState,
     RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, WirelessNetwork,
     WirelessSecurity,
+)
+from ....contexts.wireless.schedule import (
+    SCHEDULE_DELETE, SCHEDULE_OPERATIONS, SCHEDULE_SELECT_DAYS, SCHEDULE_TYPES, MINUTES_PER_DAY,
+    ScheduleChange, ScheduleState,
 )
 
 from ....application.contracts import PlatformCapabilities
@@ -84,15 +89,20 @@ class OpenWrtUciAdapter:
         management_vlan_device: str | None = None,
         portal_network: str = "",
         state_file: Path | None = None,
+        clock: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._runner = runner or SubprocessRunner()
         self._management_vlan_interface = management_vlan_interface
         self._management_vlan_device = management_vlan_device
         self._portal_network = portal_network
-        # MAC filter groups and SSID links as last applied. Changes arrive one
-        # rule at a time, so the state is saved to survive an agent restart.
+        # MAC filter groups, WLAN schedules and their SSID links as last
+        # applied. Changes arrive one rule at a time, so the state is saved to
+        # survive an agent restart.
         self._state_file = state_file
-        self._mac_filter = _load_mac_filter(state_file)
+        self._mac_filter, self._schedule = _load_wireless_state(state_file)
+        # Local time (the site time zone the agent wrote to OpenWrt).
+        self._clock = clock
+        self._ticked = False
 
     def reconcile(
         self,
@@ -125,6 +135,12 @@ class OpenWrtUciAdapter:
         if update.mac_filter is not None:
             errors = (*errors, *_mac_filter_errors(update.mac_filter))
             mac_filter = mac_filter.apply(update.mac_filter, full_sync=update.config_version is not None)
+        schedule = self._schedule
+        if update.schedule is not None:
+            errors = (*errors, *_schedule_errors(update.schedule))
+            schedule = schedule.apply(update.schedule, full_sync=update.config_version is not None)
+            if update.schedule.mode not in (None, 0):
+                log.warning("schedulerGlobal mode %s is Unknown; applying it like mode 0", update.schedule.mode)
         if errors:
             return ReconciliationResult(
                 applied=False,
@@ -165,9 +181,12 @@ class OpenWrtUciAdapter:
             portal_network=self._portal_network,
             mac_filter=mac_filter,
             mac_filter_changed=update.mac_filter is not None,
+            schedule=schedule,
+            schedule_changed=update.schedule is not None,
+            now=self._clock(),
         )
         if not batch:
-            self._commit_mac_filter(mac_filter)
+            self._commit_state(mac_filter, schedule)
             return ReconciliationResult(
                 applied=True,
                 changed=False,
@@ -182,7 +201,7 @@ class OpenWrtUciAdapter:
                 command_count=len(batch),
             )
         # UCI now holds the new filter; a failed reload does not undo that.
-        self._commit_mac_filter(mac_filter)
+        self._commit_state(mac_filter, schedule)
 
         reload_result = self._runner.run(["wifi", "reload"])
         if reload_result.returncode != 0:
@@ -199,23 +218,61 @@ class OpenWrtUciAdapter:
             command_count=len(batch),
         )
 
-    def _commit_mac_filter(self, mac_filter: MacFilterState) -> None:
-        if mac_filter == self._mac_filter:
+    def tick(self) -> ReconciliationResult | None:
+        """Turn scheduled SSIDs off or back on; None when nothing changed.
+
+        Called about once a minute. Reads UCI only while a schedule is linked
+        (and once after start, to undo a stale schedule).
+        """
+        if self._ticked and not (self._schedule.enabled and self._schedule.assoc):
+            return None
+        self._ticked = True
+        result = self._runner.run(["uci", "-q", "show", "wireless"])
+        if result.returncode != 0:
+            return None
+        wireless_state = parse_uci_show(result.stdout)
+        now = self._clock()
+        lines: list[str] = []
+        for section, ssid_id, band in _managed_ssid_sections(wireless_state):
+            off = self._schedule.ssid_off(ssid_id, band, now)
+            section_lines = _schedule_lines(section, wireless_state[section], off)
+            if section_lines:
+                log.info("WLAN schedule: SSID section %s %s", section, "off" if off else "back on")
+            lines.extend(section_lines)
+        if not lines:
+            return None
+        lines.append("commit wireless")
+        batch = self._runner.run(["uci", "-q", "batch"], input_text="\n".join(lines) + "\n")
+        if batch.returncode != 0:
+            error = (batch.stderr or batch.stdout or "uci batch failed").strip()
+            log.warning("WLAN schedule not applied: %s", error)
+            return ReconciliationResult(applied=False, changed=False, error=error, command_count=len(lines))
+        reload_result = self._runner.run(["wifi", "reload"])
+        if reload_result.returncode != 0:
+            error = (reload_result.stderr or reload_result.stdout or "wifi reload failed").strip()
+            log.warning("WLAN schedule: %s", error)
+            return ReconciliationResult(applied=False, changed=True, error=error, command_count=len(lines))
+        return ReconciliationResult(applied=True, changed=True, command_count=len(lines))
+
+    def _commit_state(self, mac_filter: MacFilterState, schedule: ScheduleState) -> None:
+        if mac_filter == self._mac_filter and schedule == self._schedule:
             return
         self._mac_filter = mac_filter
+        self._schedule = schedule
         if self._state_file is None:
             return
+        data = {"macFilter": mac_filter.to_dict(), "schedule": schedule.to_dict()}
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = self._state_file.with_name(self._state_file.name + ".tmp")
-            tmp_path.write_text(json.dumps({"macFilter": mac_filter.to_dict()}, sort_keys=True) + "\n")
+            tmp_path.write_text(json.dumps(data, sort_keys=True) + "\n")
             os.replace(tmp_path, self._state_file)
         except OSError as exc:
-            log.warning("Could not save MAC filter state to %s: %s", self._state_file, exc)
+            log.warning("Could not save wireless state to %s: %s", self._state_file, exc)
 
     def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
         """Read ``wireless`` sections when Advanced radio settings are involved."""
-        if not (update.radio_advanced or update.wlans or update.wlan_bands or update.mac_filter):
+        if not (update.radio_advanced or update.wlans or update.wlan_bands or update.mac_filter or update.schedule):
             return {}
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
@@ -323,9 +380,14 @@ def build_uci_batch(
     portal_network: str = "",
     mac_filter: MacFilterState | None = None,
     mac_filter_changed: bool = False,
+    schedule: ScheduleState | None = None,
+    schedule_changed: bool = False,
+    now: datetime | None = None,
 ) -> tuple[str, ...]:
     lines: list[str] = []
     mac_filter = mac_filter or MacFilterState()
+    schedule = schedule or ScheduleState()
+    now = now or datetime.now()
     current_htmodes = current_htmodes or {}
     wireless_state = wireless_state or {}
     network_lines: list[str] = []
@@ -383,12 +445,21 @@ def build_uci_batch(
                 continue
             policy = mac_filter.policy(ssid_id, band)
             lines.extend(_mac_filter_lines(section, policy, reset=True))
+    if schedule_changed:
+        # SSIDs this SET does not rebuild still follow the new schedule.
+        for section, ssid_id, band in _managed_ssid_sections(wireless_state):
+            if section in rebuilt or section in omitted or section in removed:
+                continue
+            off = schedule.ssid_off(ssid_id, band, now)
+            lines.extend(_schedule_lines(section, wireless_state[section], off))
     for wlan in active_wlans:
         lines.extend(_wlan_lines(wlan, capabilities, portal_network))
         band_index = MAC_FILTER_BANDS.get(wlan.band)
         if band_index is not None:
             policy = mac_filter.policy(wlan.ssid_id, band_index)
             lines.extend(_mac_filter_lines(_wlan_section(wlan), policy, reset=False))
+            if schedule.ssid_off(wlan.ssid_id, band_index, now):
+                lines.extend(_schedule_lines(_wlan_section(wlan), {}, True))
         uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
         if uapsd is not None:
             lines.append(_set("wireless", _wlan_section(wlan), "uapsd", "1" if uapsd else "0"))
@@ -447,7 +518,7 @@ def _removed_ssid_sections(
     )
 
 
-# macFilterAssoc ``band``: 0 = 2.4 GHz, 1 = 5 GHz (Observed). Other bands are
+# macFilterAssoc and schedulerAssoc ``band``: 0 = 2.4 GHz, 1 = 5 GHz (Observed). Other bands are
 # Unknown and refused.
 MAC_FILTER_BANDS = {RadioBand.TWO_G: 0, RadioBand.FIVE_G: 1}
 _MAC = re.compile(r"^[0-9a-fA-F]{2}([-:]?[0-9a-fA-F]{2}){5}$")
@@ -488,14 +559,66 @@ def _mac_filter_lines(section: str, policy: MacFilterPolicy | None, *, reset: bo
     return tuple(lines)
 
 
-def _load_mac_filter(state_file: Path | None) -> MacFilterState:
+def _load_wireless_state(state_file: Path | None) -> tuple[MacFilterState, ScheduleState]:
     if state_file is None or not state_file.exists():
-        return MacFilterState()
+        return MacFilterState(), ScheduleState()
     try:
-        return MacFilterState.from_dict(json.loads(state_file.read_text())["macFilter"])
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        log.warning("Ignoring unreadable MAC filter state %s: %s", state_file, exc)
-        return MacFilterState()
+        data = json.loads(state_file.read_text())
+    except (OSError, ValueError) as exc:
+        log.warning("Ignoring unreadable wireless state %s: %s", state_file, exc)
+        return MacFilterState(), ScheduleState()
+    mac_filter, schedule = MacFilterState(), ScheduleState()
+    try:
+        mac_filter = MacFilterState.from_dict(data["macFilter"])
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        log.warning("Ignoring unreadable MAC filter state in %s: %s", state_file, exc)
+    try:
+        if "schedule" in data:
+            schedule = ScheduleState.from_dict(data["schedule"])
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        log.warning("Ignoring unreadable WLAN schedule state in %s: %s", state_file, exc)
+    return mac_filter, schedule
+
+
+# wifi-iface option marking an SSID the WLAN schedule turned off, so the agent
+# only ever turns back on what it turned off itself.
+SCHEDULE_OFF_OPTION = "openomada_schedule_off"
+
+
+def _schedule_lines(section: str, options: Mapping[str, str], off: bool) -> tuple[str, ...]:
+    marked = options.get(SCHEDULE_OFF_OPTION) == "1"
+    if off and not marked:
+        return (
+            _set("wireless", section, "disabled", "1"),
+            _set("wireless", section, SCHEDULE_OFF_OPTION, "1"),
+        )
+    if not off and marked:
+        return (f"delete wireless.{section}.disabled", f"delete wireless.{section}.{SCHEDULE_OFF_OPTION}")
+    return ()
+
+
+def _schedule_errors(change: ScheduleChange) -> list[str]:
+    errors = []
+    for rule in change.list_rules:
+        if rule.operation not in SCHEDULE_OPERATIONS:
+            errors.append(f"unsupported schedulerList operation {rule.operation}")
+        period = rule.period
+        if period is None or rule.operation == SCHEDULE_DELETE:
+            continue
+        if period.type not in SCHEDULE_TYPES and period.type != SCHEDULE_SELECT_DAYS:
+            errors.append(f"unsupported schedulerList type {period.type!r}")
+        elif period.type == SCHEDULE_SELECT_DAYS and not 1 <= period.day <= 7:
+            errors.append(f"unsupported schedulerList day {period.day}")
+        if not (0 <= period.start < MINUTES_PER_DAY and 0 <= period.end <= MINUTES_PER_DAY):
+            errors.append("schedulerList has a time outside 00:00-24:00")
+    for rule in change.assoc_rules:
+        if rule.profile_id is None:
+            continue
+        if rule.band not in MAC_FILTER_BANDS.values():
+            errors.append(f"unsupported schedulerAssoc band {rule.band}")
+        if rule.action not in (0, 1):
+            errors.append(f"unsupported schedulerAssoc action {rule.action}")
+    return errors
 
 
 def _normal_mac(mac: str) -> str:
