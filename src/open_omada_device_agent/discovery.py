@@ -232,6 +232,10 @@ def _try_bootstrap_managed_reconnect(*, dump_tx: bool, services: ManagedSessionS
     return False
 
 
+class DiscoveryUnreachable(RuntimeError):
+    """``--once`` could not send its discovery (no route to the controller)."""
+
+
 def run(
     *,
     services: ManagedSessionServices,
@@ -366,6 +370,10 @@ def _run_cycle(
                 try:
                     sock.sendto(frame, target)
                 except OSError as exc:
+                    if once:
+                        raise DiscoveryUnreachable(
+                            f"discovery to {target[0]}:{target[1]} failed: {exc}"
+                        ) from exc
                     # No route yet (DHCP, link or address change): retry later.
                     log.warning(
                         "Discovery to %s:%d failed: %s; retrying in %.0fs",

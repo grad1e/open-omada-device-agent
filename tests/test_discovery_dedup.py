@@ -290,3 +290,23 @@ def test_discovery_survives_a_network_unreachable_send(monkeypatch):
         pass
 
     assert fake_socket.sends == 2  # retried after the failed send
+
+
+def test_once_exits_when_discovery_cannot_be_sent(monkeypatch):
+    import pytest
+
+    import open_omada_device_agent.discovery as discovery
+
+    services, _holder = _discovery_services(state=None)
+
+    class _Unroutable(_FakeSocket):
+        def sendto(self, _frame, _target):
+            raise OSError(101, "Network is unreachable")
+
+    monkeypatch.setattr(discovery.socket, "socket", lambda *_a: _Unroutable([b"never read"]))
+    monkeypatch.setattr(discovery, "build_discovery", lambda *a, **k: {})
+    monkeypatch.setattr(discovery, "encode_frame", lambda _m: b"\0\0\0\0{}")
+
+    with pytest.raises(discovery.DiscoveryUnreachable, match="Network is unreachable"):
+        discovery.run(services=services, once=True)  # used to retry forever
+
