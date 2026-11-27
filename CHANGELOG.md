@@ -181,6 +181,10 @@ All notable project changes will be documented in this file.
   needs a non-empty key, and the other modes are refused with an error
   instead of being opened. As with other refused settings, the whole SET
   is then not applied until the SSID is changed in the controller.
+- An SSID an earlier agent version had already created as an open network
+  for one of those modes stayed open, since a refused SET writes nothing.
+  The agent now turns such an SSID off when it refuses it; it comes back
+  once the controller sends a Security mode the agent can apply.
 - On boards with two 5 GHz radios, startup checked the second radio's Auto
   channel list against the first radio's channels, so a high-band radio's
   list could be replaced with low-band channels it cannot use. Each 5 GHz
