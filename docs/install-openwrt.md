@@ -69,7 +69,8 @@ OMADA_PLATFORM=openwrt
 OMADA_DEVICE_USERNAME=admin
 OMADA_DEVICE_PASSWORD=admin
 
-# What the controller shows. Use a dual-band model for a dual-band AP.
+# What the controller shows. Use a dual-band model for a dual-band AP, or
+# OMADA_DEVICE_MODEL=auto to pick the closest model from the radios.
 OMADA_DEVICE_NAME=OpenWrt-AP
 OMADA_DEVICE_MODEL=EAP683 UR
 OMADA_DEVICE_MODEL_VERSION=1.0

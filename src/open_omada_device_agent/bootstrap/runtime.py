@@ -6,6 +6,7 @@ import threading
 
 from ..application.configuration import ApplyDeviceConfiguration
 from ..application.contracts import PlatformCapabilities
+from ..adapters.outbound.openwrt.model_select import resolve_model
 from ..adapters.outbound.openwrt.bootstrap import OpenWrtBootstrapConfig, OpenWrtStartupBootstrap
 from ..adapters.outbound.openwrt.device_commands import OpenWrtClientControlAdapter, SysfsLedAdapter
 from ..adapters.outbound.openwrt.uci import OpenWrtUciAdapter
@@ -125,6 +126,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
         start_dhcp_fallback(
             DhcpFallback(interface=settings.openwrt_lan_interface, on_change=address_changed)
         )
+    settings = resolve_model(settings, capabilities)
     profile = GenericOpenWrtAccessPointProfile(
         settings,
         ip_address=partial(

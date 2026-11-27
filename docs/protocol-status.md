@@ -6,8 +6,8 @@ The reference implementation targets the ECSP V2 family. It was first built
 against Omada Network Application `6.2.14.11` with an EAP110 v4-compatible AP
 profile, and has since been validated against Controller `6.3.0.111` with a
 dual-band Wi-Fi 6 OpenWrt AP advertised as an EAP model of the same generation
-(`OMADA_DEVICE_MODEL`, see the
-[configuration reference](configuration.md#device-identity)).
+(`OMADA_DEVICE_MODEL`, or `auto` to pick the closest model from the radios;
+see the [configuration reference](configuration.md#device-identity)).
 
 | Area | Status |
 | --- | --- |
