@@ -242,10 +242,11 @@ def test_parse_initial_controller_defaults_as_passive_config():
         "ipGroup",
         "ipv6Group",
         "logSetting",
-        "macFilterGlobal",
         "schedulerGlobal",
         "ssh",
     )
+    # MAC filtering is applied by the wireless adapter.
+    assert update.mac_filter is not None and update.mac_filter.enabled is True
     # LLDP is applied by its own command port.
     assert update.lldp is not None and update.lldp.enabled
     # SNMP is applied by its own command port (snmpd stays off here).

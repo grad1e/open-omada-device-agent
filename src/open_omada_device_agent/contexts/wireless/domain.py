@@ -159,3 +159,113 @@ class WirelessNetwork:
 
 def validate_ssid_name(name: str) -> str:
     return Ssid(name).value
+
+
+# MAC filtering (Observed, lab, Controller 6.3.0.111). The controller sends
+# changes as rules: ``operation`` 1 = add, 2 = delete, 3 = update. A full sync
+# (``configVersion``) resends every rule with operation 1.
+MAC_FILTER_ADD = 1
+MAC_FILTER_DELETE = 2
+MAC_FILTER_UPDATE = 3
+MAC_FILTER_OPERATIONS = (MAC_FILTER_ADD, MAC_FILTER_DELETE, MAC_FILTER_UPDATE)
+# macFilterAssoc ``action``: 0 = Deny List, 1 = Allow List; ``type`` 0 = MAC
+# group (type 1, an OUI profile, is Inferred and has no hostapd equivalent).
+MAC_FILTER_DENY = 0
+MAC_FILTER_ALLOW = 1
+MAC_FILTER_TYPE_GROUP = 0
+# ``listId`` -1 in a delete means every list on that SSID and band.
+MAC_FILTER_ANY_LIST = -1
+
+
+@dataclass(frozen=True)
+class MacFilterListRule:
+    """One ``macFilterList`` rule: a MAC group (no ``mac``) or one member."""
+    operation: int
+    list_id: int
+    rule_id: int | None = None
+    mac: str | None = None
+
+
+@dataclass(frozen=True)
+class MacFilterAssocRule:
+    """One ``macFilterAssoc`` rule: which group filters an SSID on a band."""
+    operation: int
+    ssid_id: int
+    band: int
+    list_id: int
+    action: int
+    type: int = MAC_FILTER_TYPE_GROUP
+
+
+@dataclass(frozen=True)
+class MacFilterChange:
+    enabled: bool | None = None
+    list_rules: tuple[MacFilterListRule, ...] = ()
+    assoc_rules: tuple[MacFilterAssocRule, ...] = ()
+
+
+@dataclass(frozen=True)
+class MacFilterPolicy:
+    """What one SSID on one band should enforce."""
+    allow: bool
+    macs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MacFilterState:
+    """The controller's MAC filter setup as the agent last applied it."""
+    enabled: bool = False
+    # list_id -> {rule_id: mac}
+    lists: Mapping[int, Mapping[int, str]] = field(default_factory=dict)
+    # (ssid_id, band) -> {list_id: (action, type)}
+    assoc: Mapping[tuple[int, int], Mapping[int, tuple[int, int]]] = field(default_factory=dict)
+
+    def apply(self, change: MacFilterChange, *, full_sync: bool) -> "MacFilterState":
+        enabled = self.enabled if not full_sync else False
+        lists = {} if full_sync else {key: dict(value) for key, value in self.lists.items()}
+        assoc = {} if full_sync else {key: dict(value) for key, value in self.assoc.items()}
+        if change.enabled is not None:
+            enabled = change.enabled
+        for rule in change.list_rules:
+            if rule.rule_id is None:
+                # The group itself.
+                if rule.operation == MAC_FILTER_DELETE:
+                    lists.pop(rule.list_id, None)
+                else:
+                    lists.setdefault(rule.list_id, {})
+                continue
+            members = lists.setdefault(rule.list_id, {})
+            if rule.operation == MAC_FILTER_DELETE:
+                members.pop(rule.rule_id, None)
+            elif rule.mac is not None:
+                members[rule.rule_id] = rule.mac
+        for rule in change.assoc_rules:
+            key = (rule.ssid_id, rule.band)
+            links = assoc.setdefault(key, {})
+            if rule.operation == MAC_FILTER_DELETE:
+                if rule.list_id == MAC_FILTER_ANY_LIST:
+                    links.clear()
+                else:
+                    links.pop(rule.list_id, None)
+            else:
+                links[rule.list_id] = (rule.action, rule.type)
+            if not links:
+                assoc.pop(key, None)
+        return MacFilterState(enabled=enabled, lists=lists, assoc=assoc)
+
+    def policy(self, ssid_id: int | None, band: int) -> MacFilterPolicy | None:
+        """The filter for one SSID and band, or None when it has none."""
+        if not self.enabled or ssid_id is None:
+            return None
+        links = self.assoc.get((ssid_id, band))
+        if not links:
+            return None
+        allow = any(action == MAC_FILTER_ALLOW for action, _ in links.values())
+        macs = sorted(
+            {
+                mac
+                for list_id in links
+                for mac in self.lists.get(list_id, {}).values()
+            }
+        )
+        return MacFilterPolicy(allow=allow, macs=tuple(macs))

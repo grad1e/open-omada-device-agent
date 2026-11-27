@@ -15,6 +15,8 @@ from typing import Protocol
 from .... import config
 from ....application.commands import ApplyDeviceConfigurationCommand
 from ....contexts.wireless.domain import (
+    MAC_FILTER_ANY_LIST, MAC_FILTER_DELETE, MAC_FILTER_OPERATIONS, MAC_FILTER_TYPE_GROUP,
+    MacFilterChange, MacFilterPolicy, MacFilterState,
     RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, WirelessNetwork,
     WirelessSecurity,
 )
@@ -83,6 +85,10 @@ class OpenWrtUciAdapter:
         self._management_vlan_interface = management_vlan_interface
         self._management_vlan_device = management_vlan_device
         self._portal_network = portal_network
+        # MAC filter groups and SSID links as last applied. The controller
+        # resends the whole setup on every reconnect (full sync), so memory is
+        # enough (Observed: lab, agent restart).
+        self._mac_filter = MacFilterState()
 
     def reconcile(
         self,
@@ -111,6 +117,10 @@ class OpenWrtUciAdapter:
                 wlan.security.ft_mobility_domain,
                 wlan.load_balance,
             )
+        mac_filter = self._mac_filter
+        if update.mac_filter is not None:
+            errors = (*errors, *_mac_filter_errors(update.mac_filter))
+            mac_filter = mac_filter.apply(update.mac_filter, full_sync=update.config_version is not None)
         if errors:
             return ReconciliationResult(
                 applied=False,
@@ -149,8 +159,11 @@ class OpenWrtUciAdapter:
             current_htmodes=self._current_htmodes(update),
             wireless_state=self._wireless_state(update),
             portal_network=self._portal_network,
+            mac_filter=mac_filter,
+            mac_filter_changed=update.mac_filter is not None,
         )
         if not batch:
+            self._mac_filter = mac_filter
             return ReconciliationResult(
                 applied=True,
                 changed=False,
@@ -174,6 +187,7 @@ class OpenWrtUciAdapter:
                 command_count=len(batch),
             )
 
+        self._mac_filter = mac_filter
         return ReconciliationResult(
             applied=True,
             changed=True,
@@ -182,7 +196,7 @@ class OpenWrtUciAdapter:
 
     def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
         """Read ``wireless`` sections when Advanced radio settings are involved."""
-        if not (update.radio_advanced or update.wlans or update.wlan_bands):
+        if not (update.radio_advanced or update.wlans or update.wlan_bands or update.mac_filter):
             return {}
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
@@ -286,8 +300,11 @@ def build_uci_batch(
     current_htmodes: Mapping[str, str] | None = None,
     wireless_state: WirelessState | None = None,
     portal_network: str = "",
+    mac_filter: MacFilterState | None = None,
+    mac_filter_changed: bool = False,
 ) -> tuple[str, ...]:
     lines: list[str] = []
+    mac_filter = mac_filter or MacFilterState()
     current_htmodes = current_htmodes or {}
     wireless_state = wireless_state or {}
     network_lines: list[str] = []
@@ -337,8 +354,19 @@ def build_uci_batch(
     omitted = {_wlan_section(wlan) for wlan in omitted_wlans}
     for section in _removed_ssid_sections(update.wlan_bands, rebuilt | omitted, wireless_state):
         lines.append(f"delete wireless.{section}")
+    if mac_filter_changed:
+        # SSIDs this SET does not rebuild still follow the new MAC filter.
+        for section, ssid_id, band in _managed_ssid_sections(wireless_state):
+            if section in rebuilt or section in omitted:
+                continue
+            policy = mac_filter.policy(ssid_id, band)
+            lines.extend(_mac_filter_lines(section, policy, reset=True))
     for wlan in active_wlans:
         lines.extend(_wlan_lines(wlan, capabilities, portal_network))
+        band_index = MAC_FILTER_BANDS.get(wlan.band)
+        if band_index is not None:
+            policy = mac_filter.policy(wlan.ssid_id, band_index)
+            lines.extend(_mac_filter_lines(_wlan_section(wlan), policy, reset=False))
         uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
         if uapsd is not None:
             lines.append(_set("wireless", _wlan_section(wlan), "uapsd", "1" if uapsd else "0"))
@@ -395,6 +423,66 @@ def _removed_ssid_sections(
         and options.get(".type") == "wifi-iface"
         and options.get("openomada_managed") == "1"
     )
+
+
+# macFilterAssoc ``band``: 0 = 2.4 GHz, 1 = 5 GHz (Observed). Other bands are
+# Unknown and refused.
+MAC_FILTER_BANDS = {RadioBand.TWO_G: 0, RadioBand.FIVE_G: 1}
+_MAC = re.compile(r"^[0-9a-fA-F]{2}([-:]?[0-9a-fA-F]{2}){5}$")
+
+
+def _mac_filter_errors(change: MacFilterChange) -> list[str]:
+    errors = []
+    for rule in change.list_rules:
+        if rule.operation not in MAC_FILTER_OPERATIONS:
+            errors.append(f"unsupported macFilterList operation {rule.operation}")
+        if rule.mac is not None and not _MAC.match(rule.mac):
+            errors.append("macFilterList has an invalid MAC address")
+    for rule in change.assoc_rules:
+        if rule.operation not in MAC_FILTER_OPERATIONS:
+            errors.append(f"unsupported macFilterAssoc operation {rule.operation}")
+        if rule.operation != MAC_FILTER_DELETE:
+            if rule.band not in MAC_FILTER_BANDS.values():
+                errors.append(f"unsupported macFilterAssoc band {rule.band}")
+            if rule.type != MAC_FILTER_TYPE_GROUP:
+                errors.append("MAC filter OUI profiles are not supported (hostapd filters exact MACs only)")
+            if rule.action not in (0, 1):
+                errors.append(f"unsupported macFilterAssoc action {rule.action}")
+        elif rule.list_id != MAC_FILTER_ANY_LIST and rule.list_id < 0:
+            errors.append(f"unsupported macFilterAssoc listId {rule.list_id}")
+    return errors
+
+
+def _mac_filter_lines(section: str, policy: MacFilterPolicy | None, *, reset: bool) -> tuple[str, ...]:
+    lines = []
+    if reset:
+        lines.append(f"delete wireless.{section}.macfilter")
+        lines.append(f"delete wireless.{section}.maclist")
+    if policy is None:
+        return tuple(lines)
+    lines.append(_set("wireless", section, "macfilter", "allow" if policy.allow else "deny"))
+    for mac in policy.macs:
+        lines.append(f"add_list wireless.{section}.maclist='{_normal_mac(mac)}'")
+    return tuple(lines)
+
+
+def _normal_mac(mac: str) -> str:
+    digits = re.sub(r"[^0-9a-fA-F]", "", mac).lower()
+    return ":".join(digits[i:i + 2] for i in range(0, 12, 2))
+
+
+def _managed_ssid_sections(wireless_state: WirelessState) -> tuple[tuple[str, int | None, int], ...]:
+    """(section, controller SSID id, macFilterAssoc band) for agent SSIDs."""
+    sections = []
+    for name, options in wireless_state.items():
+        if options.get(".type") != "wifi-iface" or options.get("openomada_managed") != "1":
+            continue
+        for band, index in MAC_FILTER_BANDS.items():
+            if name.startswith(f"openomada_{band.value}_"):
+                raw_id = options.get("openomada_ssid_id", "")
+                ssid_id = int(raw_id) if raw_id.lstrip("-").isdigit() else None
+                sections.append((name, ssid_id, index))
+    return tuple(sections)
 
 
 def _radio_uapsd(wireless_state: WirelessState) -> dict[str, bool]:
