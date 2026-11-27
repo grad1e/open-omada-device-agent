@@ -280,8 +280,10 @@ def _iw_supports_ap_mode(output: str) -> bool:
 
 
 def _run_command_succeeds(args: tuple[str, ...]) -> bool:
+    # 10 s: grep reads the whole hostapd binary (1-2 MB from squashfs), which
+    # can be slow on a small AP with a cold cache.
     try:
-        result = subprocess.run(args, capture_output=True, check=False, timeout=2)
+        result = subprocess.run(args, capture_output=True, check=False, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0

@@ -141,8 +141,8 @@ OMADA_TLS_CA_FILE=/etc/open-omada/controller-ca.pem
 | `OMADA_CAP_WPA2_PSK` | auto on OpenWrt with `uci` | Accept WPA-Personal WLANs: WPA-PSK, WPA2-PSK and WPA/WPA2-PSK, with Auto (TKIP+AES) or AES |
 | `OMADA_CAP_WPA3_PSK` | auto when `hostapd -vsae` succeeds | Accept WPA2-PSK/WPA3-SAE WLANs (`sae-mixed`) |
 | `OMADA_CAP_80211R` | auto when `hostapd -v11r` succeeds | Accept 802.11r fast roaming (FT-PSK and FT-SAE) |
-| `OMADA_CAP_80211K` | auto when hostapd is installed | Accept the SSID's Load Balance setting and write `ieee80211k` |
-| `OMADA_CAP_80211V` | auto when the hostapd binary has WNM (`wnm_sleep_mode`; full `wpad` builds, not `wpad-basic`) | Also write `bss_transition` for Load Balance. Forcing it on with `wpad-basic` leaves the radio down |
+| `OMADA_CAP_80211K` | auto on OpenWrt with `uci` and hostapd installed | Accept the SSID's Load Balance setting and write `ieee80211k` |
+| `OMADA_CAP_80211V` | auto on OpenWrt with `uci` when the hostapd binary has WNM (`wnm_sleep_mode`; full `wpad` builds, not `wpad-basic`) | Also write `bss_transition` for Load Balance. Forcing it on with `wpad-basic` leaves the radio down |
 | `OMADA_CAP_SSID_VLAN` | `false` | Accept SSID VLAN mapping |
 | `OMADA_CAP_DYNAMIC_VLAN` | `false` | Accept dynamic VLAN requests |
 | `OMADA_CAP_MANAGEMENT_VLAN` | `false` | Accept management VLAN requests |
