@@ -14,5 +14,5 @@ Describe the sanitized evidence supporting the change.
 
 - [ ] Tests added or updated
 - [ ] `docs/protocol-status.md` updated when support changed
-- [ ] No credentials, tokens, private captures, vendor source, firmware, or proprietary assets included
+- [ ] No credentials, tokens, private captures, vendor source, firmware, or proprietary assets included (the generated AP model table is the one allowed exception)
 - [ ] Capability advertisement was not expanded beyond implemented behavior

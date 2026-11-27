@@ -40,7 +40,13 @@ Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
 
 1. **No vendor material.** Never add TP-Link source, decompiled code,
    firmware, certificates, keys or controller data. Implement from observed
-   behavior only.
+   behavior only. One exception: the AP model table
+   (`contexts/device/omada_models_data.py`) holds a few facts per model
+   (bands, streams, power range, widest channel, Wi-Fi generation, DFS)
+   generated from a controller's model templates by
+   `scripts/gen_omada_models.py`, credited in NOTICE. More facts may be added
+   there when a feature needs them; device identifiers, firmware data,
+   feature lists and raw template exports may not.
 2. **No real identifiers.** Use `02:aa:bb:cc:dd:01`-style MACs, `192.0.2.x`
    / `198.51.100.x` addresses and made-up SSIDs in code, tests and docs. Never
    write passwords, Wi-Fi keys or tokens anywhere, including logs you paste.
