@@ -6,6 +6,10 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- The agent reports the `scheduler` component when it manages Wi-Fi, so
+  the controller no longer lists WLAN Schedule as not supported on
+  Configuration Result. PMF is still listed: the controller ties it to mDNS
+  support, which the agent does not have, though PMF settings are applied.
 - 802.11 Rate Control from the SSID editor: the minimum rate, management
   rate, "require clients" and 1 Mbps beacons are applied as the radio's
   `supported_rates`, `basic_rate` and `beacon_rate`. OpenWrt sets rates per
