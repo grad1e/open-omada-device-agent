@@ -174,6 +174,11 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- An SSID switched off for one AP (Devices > AP > Config > Wireless >
+  WLANs > Enable) stayed on: the controller marks it with `operation` 2,
+  which the agent ignored, and a full sync then leaves the band out. The
+  agent now removes that SSID, and builds it again when it is switched
+  back on.
 - An SSID set to WPA-Enterprise, PPSK or OWE, or a WPA-Personal SSID sent
   with no key at all, was created as an open network: the agent chose
   encryption only by whether a key was present. The SSID's Security mode

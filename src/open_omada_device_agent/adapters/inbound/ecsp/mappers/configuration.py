@@ -56,6 +56,11 @@ SSID_KEYS: dict[str, RadioBand] = {
     "ssid_5G2": RadioBand.FIVE_G2,
     "ssid_6G": RadioBand.SIX_G,
 }
+# SSID item ``operation`` (Observed: lab, Controller 6.3.0.111): 1 when the
+# SSID is on for this AP, 2 when it is switched off for this AP only
+# (Devices > AP > Config > Wireless > WLANs > Enable). A switched-off SSID is
+# left out of ``wlans`` while its band stays listed, so its section is removed.
+SSID_OPERATION_OFF = 2
 
 KNOWN_COMMON_KEYS = {"sequenceId", "configVersion", "configVersionInc"}
 # Controller-level defaults that are part of ordinary Omada AP config pushes but
@@ -131,10 +136,17 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         if raw is not None:
             radios.append(_parse_radio_config(band, raw))
 
+    full_sync = body.get("configVersion") is not None
     for key, band in SSID_KEYS.items():
         raw = body.get(key)
         if raw is not None:
-            wlans.extend(_parse_ssid_config(band, raw))
+            wlans.extend(
+                wlan for wlan in _parse_ssid_config(band, raw) if wlan.operation != SSID_OPERATION_OFF
+            )
+            wlan_bands.append(band)
+        elif full_sync:
+            # A full sync leaves out a band's key when no SSID is on there for
+            # this AP (Observed: lab, the only SSID switched off for the AP).
             wlan_bands.append(band)
 
     radio_advanced = _parse_radio_advanced(body)
