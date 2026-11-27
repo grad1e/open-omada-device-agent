@@ -212,8 +212,9 @@ def test_reconcile_reads_current_htmode_before_changing_width():
     result = OpenWrtUciAdapter(runner).reconcile(update, _caps())
 
     assert result.applied is True
-    assert runner.calls[0][0] == ("uci", "-q", "get", "wireless.radio1.htmode")
-    assert "set wireless.radio1.htmode='HE40'" in (runner.calls[1][1] or "")
+    assert runner.calls[0][0] == ("uci", "-q", "show", "wireless")
+    assert runner.calls[1][0] == ("uci", "-q", "get", "wireless.radio1.htmode")
+    assert "set wireless.radio1.htmode='HE40'" in (runner.calls[2][1] or "")
 
 
 def test_reconcile_runs_uci_batch_and_wifi_reload_without_shell():
