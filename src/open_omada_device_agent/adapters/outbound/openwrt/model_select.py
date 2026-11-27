@@ -24,7 +24,9 @@ def radio_facts(hardware: RadioHardware) -> RadioFacts:
     two_g = hardware.band is RadioBand.TWO_G
     # 80 and 160 MHz channels exist only above 2.4 GHz; some 2.4 GHz chips
     # still report VHT ("256-QAM on 2.4 GHz").
-    if not two_g and (hardware.he160 or hardware.vht160):
+    if hardware.eht320:
+        width = 320
+    elif not two_g and (hardware.he160 or hardware.vht160):
         width = 160
     elif not two_g and (hardware.vht or hardware.he):
         width = 80
@@ -42,6 +44,8 @@ def radio_facts(hardware: RadioHardware) -> RadioFacts:
 
 
 def generation(radios: tuple[RadioHardware, ...]) -> int:
+    if any(r.eht for r in radios):
+        return 7
     if any(r.he for r in radios):
         return 6
     if any(r.vht for r in radios):

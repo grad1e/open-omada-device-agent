@@ -44,6 +44,9 @@ class RadioHardware:
     vht160: bool = False
     he: bool = False
     he160: bool = False
+    # Wi-Fi 7 (802.11be) in AP mode, and 320 MHz channels (6 GHz only).
+    eht: bool = False
+    eht320: bool = False
     streams: int = 1
     channels: tuple[RadioChannel, ...] = ()
     # Radar detection (CAC) works: the regulatory domain names a DFS region.

@@ -1,0 +1,95 @@
+# Made-up iw list for a dual-stream tri-band Wi-Fi 7 AP (2.4/5/6 GHz).
+# Written for tests in the format of iw's output; not a capture of a real device.
+Wiphy phy0
+	Supported interface modes:
+		 * managed
+		 * AP
+	Band 0:
+		Capabilities: 0x19ef
+			HT20/HT40
+		HE Iftypes: managed
+			HE PHY Capabilities: (0x00):
+				HE40/2.4GHz
+		HE Iftypes: AP
+			HE PHY Capabilities: (0x00):
+				HE40/2.4GHz
+			HE RX MCS and NSS set <= 80 MHz
+					1 streams: MCS 0-11
+					2 streams: MCS 0-11
+		EHT Iftypes: managed
+			EHT PHY Capabilities: (0x00):
+				SU Beamformee
+		EHT Iftypes: AP
+			EHT MAC Capabilities (0x0000):
+			EHT PHY Capabilities: (0x00):
+				SU Beamformer
+			EHT bw <= 80 MHz, max NSS for MCS 8-9: Rx=2, Tx=2
+		Bitrates (non-HT):
+			* 6.0 Mbps
+		Frequencies:
+			* 2412.0 MHz [1] (23.0 dBm)
+			* 2437.0 MHz [6] (23.0 dBm)
+			* 2462.0 MHz [11] (23.0 dBm)
+	Band 1:
+		Capabilities: 0x19ef
+			HT20/HT40
+		VHT Capabilities (0x0):
+			Supported Channel Width: 160 MHz
+		HE Iftypes: managed
+			HE PHY Capabilities: (0x00):
+				HE40/HE80/5GHz
+				HE160/5GHz
+		HE Iftypes: AP
+			HE PHY Capabilities: (0x00):
+				HE40/HE80/5GHz
+				HE160/5GHz
+			HE RX MCS and NSS set <= 80 MHz
+					1 streams: MCS 0-11
+					2 streams: MCS 0-11
+		EHT Iftypes: managed
+			EHT PHY Capabilities: (0x00):
+				SU Beamformee
+		EHT Iftypes: AP
+			EHT MAC Capabilities (0x0000):
+			EHT PHY Capabilities: (0x00):
+				SU Beamformer
+			EHT bw=160 MHz, max NSS for MCS 8-9: Rx=2, Tx=2
+			EHT bw <= 80 MHz, max NSS for MCS 8-9: Rx=2, Tx=2
+		Bitrates (non-HT):
+			* 6.0 Mbps
+		Frequencies:
+			* 5180.0 MHz [36] (23.0 dBm)
+			* 5200.0 MHz [40] (23.0 dBm)
+			* 5220.0 MHz [44] (23.0 dBm)
+			* 5240.0 MHz [48] (23.0 dBm)
+	Band 3:
+		Capabilities: 0x19ef
+			HT20/HT40
+		HE Iftypes: managed
+			HE PHY Capabilities: (0x00):
+				HE40/HE80/5GHz
+				HE160/5GHz
+		HE Iftypes: AP
+			HE PHY Capabilities: (0x00):
+				HE40/HE80/5GHz
+				HE160/5GHz
+			HE RX MCS and NSS set <= 80 MHz
+					1 streams: MCS 0-11
+					2 streams: MCS 0-11
+		EHT Iftypes: managed
+			EHT PHY Capabilities: (0x00):
+				SU Beamformee
+		EHT Iftypes: AP
+			EHT MAC Capabilities (0x0000):
+			EHT PHY Capabilities: (0x00):
+				SU Beamformer
+				320MHz in 6GHz Supported
+			EHT bw=320 MHz, max NSS for MCS 8-9: Rx=2, Tx=2
+			EHT bw <= 80 MHz, max NSS for MCS 8-9: Rx=2, Tx=2
+		Bitrates (non-HT):
+			* 6.0 Mbps
+		Frequencies:
+			* 5955.0 MHz [1] (23.0 dBm)
+			* 5975.0 MHz [5] (23.0 dBm)
+			* 6135.0 MHz [37] (23.0 dBm)
+	valid interface combinations:
