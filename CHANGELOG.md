@@ -175,7 +175,7 @@ All notable project changes will be documented in this file.
 ### Fixed
 
 - A Wi-Fi key OpenWrt would reject (not 8 to 63 bytes, a 64-character key
-  that is not hex, or one with a control character such as a line break)
+  that is not hex, or one with a line break or NUL character)
   was written anyway, so the SSID failed to start. The SET is now refused
   with an error that names the problem but not the key.
 - An SSID switched off for one AP (Devices > AP > Config > Wireless >

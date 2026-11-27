@@ -220,13 +220,15 @@ def test_owe_flag_false_as_a_string_stays_open():
         "x" * 65,  # over 64
         "g" * 64,  # 64 but not hex
         "line\nbreak-key",  # would split the hostapd config line
-        "tab\tinside-key",
+        "carriage\rreturn-key",
+        "nul\0inside-key",
     ],
 )
 def test_wifi_key_openwrt_would_reject_is_refused(key):
     errors = validate_update(_update(securityMode=3, pskVer=2, pskCipher=3, pskKey=key), _caps())
 
     assert any("Wi-Fi key" in error for error in errors)
+    assert not any(key in error for error in errors)
     assert not any(key in error for error in errors)
 
 
@@ -238,6 +240,7 @@ def test_wifi_key_openwrt_would_reject_is_refused(key):
         "0123456789abcdef" * 4,  # raw PSK
         " spaces are fine ",
         "héllo-wörld",  # non-ASCII, counted in bytes
+        "tab\tinside-key",  # hostapd keeps tabs
     ],
 )
 def test_wifi_key_openwrt_accepts_is_applied(key):
@@ -250,3 +253,4 @@ def test_multibyte_key_over_63_bytes_is_refused():
     errors = validate_update(_update(securityMode=3, pskVer=2, pskCipher=3, pskKey=key), _caps())
 
     assert any("Wi-Fi key" in error for error in errors)
+    assert not any(key in error for error in errors)
