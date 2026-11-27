@@ -145,7 +145,7 @@ class OpenWrtUciAdapter:
             if update.schedule.mode not in (None, 0):
                 log.warning("schedulerGlobal mode %s is Unknown; applying it like mode 0", update.schedule.mode)
         if errors:
-            return self._refuse(update, errors)
+            return self._refuse(update, capabilities, errors)
 
         for radio in update.radios:
             log.info(
@@ -225,18 +225,24 @@ class OpenWrtUciAdapter:
     def _refuse(
         self,
         update: ApplyDeviceConfigurationCommand,
+        capabilities: PlatformCapabilities,
         errors: Sequence[str],
     ) -> ReconciliationResult:
-        """Refuse the SET, but first turn off open SSIDs it refuses for security.
+        """Refuse the SET, but first remove open SSIDs it refuses for security.
 
         Before securityMode was checked, an SSID the agent cannot secure
         (WPA-Enterprise, PPSK, OWE, WPA-Personal without a key) was written as
         an open network. A refused SET writes nothing, so such a section would
-        stay open until the SSID is changed in the controller. It is switched
-        off instead; the next accepted SET rebuilds the section from scratch.
+        stay open until the SSID is changed in the controller. The section is
+        deleted, not just disabled: the WLAN schedule tick would otherwise
+        turn a disabled section back on. The next accepted SET rebuilds it.
         """
         error = "; ".join(errors)
-        refused = {_wlan_section(wlan) for wlan in update.wlans if _security_mode_errors(wlan)}
+        refused = {
+            _wlan_section(wlan)
+            for wlan in _active_wlans(update, capabilities)
+            if _security_mode_errors(wlan)
+        }
         if not refused:
             return ReconciliationResult(applied=False, changed=False, error=error)
         result = self._runner.run(["uci", "-q", "show", "wireless"])
@@ -244,25 +250,25 @@ class OpenWrtUciAdapter:
             log.warning("uci show wireless failed; cannot check refused SSIDs for open sections")
             return ReconciliationResult(applied=False, changed=False, error=error)
         wireless_state = parse_uci_show(result.stdout)
-        stale = sorted(section for section in refused if _open_and_up(wireless_state.get(section, {})))
+        stale = sorted(section for section in refused if _open_agent_ssid(wireless_state.get(section, {})))
         if not stale:
             return ReconciliationResult(applied=False, changed=False, error=error)
-        lines = [_set("wireless", section, "disabled", "1") for section in stale]
+        lines = [f"delete wireless.{section}" for section in stale]
         lines.append("commit wireless")
         batch = self._runner.run(["uci", "-q", "batch"], input_text="\n".join(lines) + "\n")
         if batch.returncode != 0:
             detail = (batch.stderr or batch.stdout or "uci batch failed").strip()
-            log.warning("Could not turn off open SSID sections %s: %s", ", ".join(stale), detail)
+            log.warning("Could not remove open SSID sections %s: %s", ", ".join(stale), detail)
             return ReconciliationResult(applied=False, changed=False, error=error, command_count=len(lines))
-        log.warning("Turned off open SSID sections %s: their SSIDs are refused for security", ", ".join(stale))
+        log.warning("Removed open SSID sections %s: their SSIDs are refused for security", ", ".join(stale))
         reload_result = self._runner.run(["wifi", "reload"])
         if reload_result.returncode != 0:
             detail = (reload_result.stderr or reload_result.stdout or "wifi reload failed").strip()
-            log.warning("wifi reload after turning off open SSIDs failed: %s", detail)
+            log.warning("wifi reload after removing open SSIDs failed: %s", detail)
         return ReconciliationResult(
             applied=False,
             changed=True,
-            error=f"{error}; turned off the open SSID left by an earlier apply",
+            error=f"{error}; removed the open SSID left by an earlier apply",
             command_count=len(lines),
         )
 
@@ -942,13 +948,15 @@ def _security_mode_errors(wlan: WirelessNetwork) -> list[str]:
     return [f"SSID {wlan.name!r}: unsupported security mode code {mode}"]
 
 
-def _open_and_up(options: Mapping[str, str]) -> bool:
-    """An agent-created SSID section that is on and has no encryption."""
+def _open_agent_ssid(options: Mapping[str, str]) -> bool:
+    """An agent-created SSID section with no encryption, on or off.
+
+    A disabled one counts too: the WLAN schedule may turn it back on.
+    """
     return (
         options.get(".type") == "wifi-iface"
         and options.get("openomada_managed") == "1"
         and options.get("encryption", "none") == "none"
-        and options.get("disabled", "0") != "1"
     )
 
 
