@@ -16,6 +16,7 @@ from .... import config
 from ....application.commands import ApplyDeviceConfigurationCommand
 from ....contexts.wireless.domain import (
     RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, WirelessNetwork,
+    WirelessSecurity,
 )
 
 from ....application.contracts import PlatformCapabilities
@@ -97,6 +98,17 @@ class OpenWrtUciAdapter:
             management_vlan_interface=self._management_vlan_interface,
             management_vlan_device=self._management_vlan_device,
         )
+        for wlan in update.wlans:
+            log.info(
+                "SSID %s %s security: pskVer=%s pskCipher=%s pmfMode=%s 802.11r=%s mobilityDomain=%s",
+                wlan.band.value,
+                wlan.index if wlan.index is not None else wlan.ssid_id,
+                wlan.security.psk_version,
+                wlan.security.psk_cipher,
+                wlan.security.pmf_mode,
+                wlan.security.fast_roaming,
+                wlan.security.ft_mobility_domain,
+            )
         if errors:
             return ReconciliationResult(
                 applied=False,
@@ -214,18 +226,8 @@ def validate_update(
             errors.append("DHCP Option 82 requested but platform capability is disabled")
         if wlan.portal.enabled and not capabilities.supports_portal:
             errors.append("portal WLAN requested but platform capability is disabled")
-        if (
-            wlan.security.psk_key is not None
-            and wlan.security.psk_version == 3
-            and not capabilities.supports_wpa3_psk
-        ):
-            errors.append("WPA3-PSK WLAN requested but WPA3-PSK capability is disabled")
-        if (
-            wlan.security.psk_key is not None
-            and wlan.security.psk_version != 3
-            and not capabilities.supports_wpa2_psk
-        ):
-            errors.append("PSK WLAN requested but WPA2-PSK capability is disabled")
+        if wlan.security.psk_key is not None:
+            errors.extend(_psk_errors(wlan, capabilities))
         if (
             wlan.security.radius_auth is not None
             or wlan.security.radius_accounting is not None
@@ -558,11 +560,93 @@ def _wlan_lines(
 
     psk_key = wlan.security.psk_key
     if psk_key is not None:
-        encryption = "sae-mixed" if wlan.security.psk_version == 3 else "psk2"
-        lines.append(_set("wireless", section, "encryption", encryption))
+        lines.append(_set("wireless", section, "encryption", _psk_encryption(wlan.security)))
         lines.append(_set("wireless", section, "key", psk_key.reveal()))
+        lines.extend(_pmf_lines(section, wlan.security))
+        lines.extend(_fast_transition_lines(section, wlan.security))
     else:
         lines.append(_set("wireless", section, "encryption", "none"))
+    return tuple(lines)
+
+
+# Omada WPA-Personal codes (Observed, lab, Controller 6.3.0.111, SSID editor
+# "WPA Mode"): pskVer 1 = WPA-PSK, 2 = WPA2-PSK, 3 = WPA/WPA2-PSK,
+# 4 = WPA2-PSK/WPA3-SAE; pskCipher 1 = Auto (TKIP+AES), 3 = AES. The editor
+# offers no TKIP-only choice; 2 = TKIP is Inferred from the gap.
+PSK_ENCRYPTION = {1: "psk", 2: "psk2", 3: "psk-mixed", 4: "sae-mixed"}
+PSK_CIPHER_SUFFIX = {1: "+tkip+ccmp", 2: "+tkip", 3: "+ccmp"}
+PSK_VERSION_WPA3 = 4
+# pmfMode 1 = Mandatory, 2 = Capable, 3 = Disable (Observed, same editor) ->
+# hostapd ieee80211w 2 / 1 / 0.
+PMF_IEEE80211W = {1: "2", 2: "1", 3: "0"}
+_HEX = re.compile(r"^[0-9a-fA-F]+$")
+
+
+def _psk_errors(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> list[str]:
+    security = wlan.security
+    errors = []
+    version = security.psk_version
+    if version is not None and version not in PSK_ENCRYPTION:
+        errors.append(f"unsupported WPA-Personal version code {version}")
+    elif version == PSK_VERSION_WPA3 and not capabilities.supports_wpa3_psk:
+        errors.append("WPA3-PSK WLAN requested but WPA3-PSK capability is disabled")
+    elif version != PSK_VERSION_WPA3 and not capabilities.supports_wpa2_psk:
+        errors.append("PSK WLAN requested but WPA2-PSK capability is disabled")
+    if security.psk_cipher is not None and security.psk_cipher not in PSK_CIPHER_SUFFIX:
+        errors.append(f"unsupported WPA cipher code {security.psk_cipher}")
+    if security.pmf_mode is not None and security.pmf_mode not in PMF_IEEE80211W:
+        errors.append(f"unsupported PMF mode code {security.pmf_mode}")
+    if security.fast_roaming:
+        if not capabilities.supports_80211r:
+            errors.append("802.11r requested but the 802.11r capability is disabled (hostapd without 11r)")
+        domain = security.ft_mobility_domain or ""
+        if len(domain) != 4 or not _HEX.match(domain):
+            errors.append("802.11r needs a 4-digit hex mobility domain")
+        key = security.ft_key.reveal() if security.ft_key is not None else ""
+        if key and (len(key) not in (32, 64) or not _HEX.match(key)):
+            errors.append("802.11r key from the controller is not 32 or 64 hex digits")
+    return errors
+
+
+def _psk_encryption(security: WirelessSecurity) -> str:
+    version = security.psk_version
+    if version is None:
+        return "psk2"  # older controllers send no version
+    encryption = PSK_ENCRYPTION[version]
+    if version == PSK_VERSION_WPA3:
+        return encryption  # SAE is AES only; OpenWrt picks CCMP
+    return encryption + PSK_CIPHER_SUFFIX.get(security.psk_cipher or 0, "")
+
+
+def _pmf_lines(section: str, security: WirelessSecurity) -> tuple[str, ...]:
+    # WPA (v1) has no RSN, so no PMF. WPA3 needs PMF: OpenWrt already enables
+    # it for sae-mixed, and the controller hides "Disable" there.
+    if security.psk_version == 1 or security.pmf_mode not in PMF_IEEE80211W:
+        return ()
+    value = PMF_IEEE80211W[security.pmf_mode]
+    if security.psk_version == PSK_VERSION_WPA3 and value == "0":
+        return ()
+    return (_set("wireless", section, "ieee80211w", value),)
+
+
+def _fast_transition_lines(section: str, security: WirelessSecurity) -> tuple[str, ...]:
+    # FT needs RSN (WPA2 or later); the controller hides 802.11r for WPA-PSK.
+    if not security.fast_roaming or security.psk_version == 1:
+        return ()
+    lines = [
+        _set("wireless", section, "ieee80211r", "1"),
+        _set("wireless", section, "mobility_domain", (security.ft_mobility_domain or "").lower()),
+        _set("wireless", section, "ft_over_ds", "0"),
+        # FT-PSK: each AP derives the keys from the PSK, no key exchange.
+        _set("wireless", section, "ft_psk_generate_local", "1"),
+    ]
+    if security.ft_key is not None:
+        # FT-SAE needs key holders; every AP in the site gets the same key.
+        key = security.ft_key.reveal().lower()
+        lines.append(f"add_list wireless.{section}.r0kh='ff:ff:ff:ff:ff:ff,*,{_uci_quote(key)}'")
+        lines.append(
+            f"add_list wireless.{section}.r1kh='00:00:00:00:00:00,00:00:00:00:00:00,{_uci_quote(key)}'"
+        )
     return tuple(lines)
 
 

@@ -105,6 +105,10 @@ class WirelessSecurity:
     radius_mac_auth: Mapping[str, Any] | None = None
     pmf_mode: int | None = None
     fast_roaming: bool | None = None
+    # 802.11r: mobility domain (4 hex digits) and the 128-bit key the
+    # controller sends as keyRrb, used for the FT key holders.
+    ft_mobility_domain: str | None = None
+    ft_key: SecretValue | None = field(default=None, repr=False)
     # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
