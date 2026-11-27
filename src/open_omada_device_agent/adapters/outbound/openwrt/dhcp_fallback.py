@@ -112,7 +112,12 @@ class DhcpFallback:
             self._without_lease_since = now
         if now - self._without_lease_since < self._delay:
             return
-        self._add(address, device, gateway)
+        error = self._add(address, device, gateway)
+        if error is not None:
+            # Try again after another delay instead of every check.
+            self._without_lease_since = now
+            log.warning("IP Settings: could not add the fallback address %s: %s", address, error)
+            return
         log.warning(
             "IP Settings: no DHCP lease on %s after %.0fs; using the fallback address %s",
             self._interface,
@@ -143,9 +148,12 @@ class DhcpFallback:
         except OSError as exc:
             log.warning("IP Settings: could not set promote_secondaries on %s: %s", device, exc)
 
-    def _add(self, address: str, device: str, gateway: str | None) -> None:
+    def _add(self, address: str, device: str, gateway: str | None) -> str | None:
+        """Add the address (and route); the error, or None once it is in place."""
         self._keep_secondaries(device)
-        self._runner.run(["ip", "-4", "addr", "add", address, "dev", device])
+        added = self._runner.run(["ip", "-4", "addr", "add", address, "dev", device])
+        if added.returncode != 0:
+            return (added.stderr or added.stdout or f"ip exited with {added.returncode}").strip()
         route_added = None
         if gateway and not self._runner.run(["ip", "-4", "route", "show", "default"]).stdout.strip():
             added = self._runner.run(
@@ -155,6 +163,7 @@ class DhcpFallback:
                 route_added = gateway
         self._state_file.parent.mkdir(parents=True, exist_ok=True)
         self._state_file.write_text(_Fallback(address, device, route_added).dump())
+        return None
 
     def _remove(self, active: _Fallback) -> None:
         self._keep_secondaries(active.device)  # the DHCP address may be a secondary
