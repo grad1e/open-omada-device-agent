@@ -219,7 +219,7 @@ def test_reconcile_reads_current_htmode_before_changing_width():
 
 def test_reconcile_runs_uci_batch_and_wifi_reload_without_shell():
     update = parse_config_body(
-        {"ssid_2G": {"radioId": 0, "ssid": [{"ssidName": "lab", "pskKey": "secret"}]}}
+        {"ssid_2G": {"radioId": 0, "ssid": [{"ssidName": "lab", "pskKey": "secret-passphrase"}]}}
     )
     runner = RecordingRunner()
 
@@ -240,7 +240,7 @@ def test_reconcile_applies_first_ssid_and_logs_capacity_warning(caplog):
                 "radioId": 0,
                 "ssid": [
                     {"index": 1, "ssidName": "guest"},
-                    {"index": 2, "ssidName": "corp", "pskKey": "secret"},
+                    {"index": 2, "ssidName": "corp", "pskKey": "secret-passphrase"},
                 ],
             }
         }
@@ -353,7 +353,7 @@ def test_reconcile_rejects_wpa3_psk_when_capability_is_disabled():
         {
             "ssid_2G": {
                 "radioId": 0,
-                "ssid": [{"ssidName": "lab", "pskVer": 4, "pskKey": "secret"}],
+                "ssid": [{"ssidName": "lab", "pskVer": 4, "pskKey": "secret-passphrase"}],
             }
         }
     )
@@ -368,7 +368,7 @@ def test_reconcile_rejects_wpa3_psk_when_capability_is_disabled():
 
 def test_reconcile_reports_wifi_reload_failure():
     update = parse_config_body(
-        {"ssid_2G": {"radioId": 0, "ssid": [{"ssidName": "lab", "pskKey": "secret"}]}}
+        {"ssid_2G": {"radioId": 0, "ssid": [{"ssidName": "lab", "pskKey": "secret-passphrase"}]}}
     )
     runner = RecordingRunner(fail_wifi_reload=True)
 
