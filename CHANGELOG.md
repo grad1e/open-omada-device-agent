@@ -174,6 +174,12 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- An SSID set to WPA-Enterprise, PPSK or OWE, or a WPA-Personal SSID sent
+  without its key, was created as an open network: the agent chose
+  encryption only by whether a key was present. The SSID's Security mode
+  now decides. None stays open (even with a leftover key), WPA-Personal
+  needs its key, and the other modes are refused with an error instead of
+  being opened.
 - On boards with two 5 GHz radios, startup checked the second radio's Auto
   channel list against the first radio's channels, so a high-band radio's
   list could be replaced with low-band channels it cannot use. Each 5 GHz

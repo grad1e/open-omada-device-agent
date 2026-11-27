@@ -30,6 +30,7 @@ from ....contexts.wireless.schedule import (
 )
 
 from ....application.contracts import PlatformCapabilities
+from ....shared.domain import SecretValue
 
 
 log = logging.getLogger("open_omada.openwrt.uci")
@@ -339,7 +340,8 @@ def validate_update(
             errors.append("DHCP Option 82 requested but platform capability is disabled")
         if wlan.portal.enabled and not capabilities.supports_portal:
             errors.append("portal WLAN requested but platform capability is disabled")
-        if wlan.security.psk_key is not None:
+        errors.extend(_security_mode_errors(wlan))
+        if _wlan_psk_key(wlan) is not None:
             errors.extend(_psk_errors(wlan, capabilities))
         if wlan.load_balance and not capabilities.supports_80211k:
             errors.append("Load Balance requested but the 802.11k capability is disabled")
@@ -833,7 +835,7 @@ def _wlan_lines(
     if wlan.client_isolation is not None:
         lines.append(_set("wireless", section, "isolate", "1" if wlan.client_isolation else "0"))
 
-    psk_key = wlan.security.psk_key
+    psk_key = _wlan_psk_key(wlan)
     if psk_key is not None:
         lines.append(_set("wireless", section, "encryption", _psk_encryption(wlan.security)))
         lines.append(_set("wireless", section, "key", psk_key.reveal()))
@@ -856,6 +858,56 @@ def _wlan_lines(
 # "WPA Mode"): pskVer 1 = WPA-PSK, 2 = WPA2-PSK, 3 = WPA/WPA2-PSK,
 # 4 = WPA2-PSK/WPA3-SAE; pskCipher 1 = Auto (TKIP+AES), 3 = AES. The editor
 # offers no TKIP-only choice, so code 2 is refused rather than guessed.
+# SSID item ``securityMode`` (Observed: 3 = WPA-Personal in lab SETs; 0 =
+# None, 2 = WPA-Enterprise, 4 = PPSK without RADIUS and 5 = PPSK with RADIUS
+# are Inferred from the controller's Security list). OWE is None plus
+# ``oweEnable``. Only None and WPA-Personal are applied: anything else would
+# otherwise come up as an open network, since OpenWrt gets no key for it.
+SECURITY_NONE = 0
+SECURITY_WPA_ENTERPRISE = 2
+SECURITY_WPA_PERSONAL = 3
+SECURITY_PPSK = (4, 5)
+
+
+def _wlan_psk_key(wlan: WirelessNetwork) -> SecretValue | None:
+    """The Wi-Fi key to write, or None for an open SSID.
+
+    The security mode decides: a None SSID stays open even if the controller
+    still sends an old key. Without a mode (older controllers) the key does.
+    """
+    security = wlan.security
+    if security.security_mode not in (None, SECURITY_WPA_PERSONAL):
+        return None
+    key = security.psk_key
+    return key if key is not None and key.reveal() else None
+
+
+def _security_mode_errors(wlan: WirelessNetwork) -> list[str]:
+    security = wlan.security
+    mode = security.security_mode
+    if mode == SECURITY_NONE:
+        if _truthy(security.raw.get("oweEnable")):
+            return [f"SSID {wlan.name!r}: OWE (Enhanced Open) is not supported"]
+        return []
+    if mode == SECURITY_WPA_PERSONAL:
+        if _wlan_psk_key(wlan) is None:
+            return [f"SSID {wlan.name!r}: WPA-Personal without a Wi-Fi key; not creating it as an open network"]
+        return []
+    if mode is None:
+        return []
+    if mode == SECURITY_WPA_ENTERPRISE:
+        return [f"SSID {wlan.name!r}: WPA-Enterprise is not supported"]
+    if mode in SECURITY_PPSK:
+        return [f"SSID {wlan.name!r}: PPSK is not supported"]
+    return [f"SSID {wlan.name!r}: unsupported security mode code {mode}"]
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "enable", "enabled"}
+    return bool(value)
+
+
 PSK_ENCRYPTION = {1: "psk", 2: "psk2", 3: "psk-mixed", 4: "sae-mixed"}
 PSK_CIPHER_SUFFIX = {1: "+tkip+ccmp", 3: "+ccmp"}
 PSK_VERSION_WPA3 = 4
