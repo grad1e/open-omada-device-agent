@@ -1011,18 +1011,18 @@ def _psk_key_error(key: str) -> str | None:
     OpenWrt takes 8-63 bytes as a passphrase and 64 characters as a raw PSK;
     anything else fails the interface with INVALID_WPA_PSK (Observed: OpenWrt
     25.12 ``/usr/share/ucode/wifi/ap.uc`` and ``/lib/netifd/hostapd.sh``).
-    hostapd reads a raw PSK as hex, and its config is one setting per line, so
-    control characters are refused too.
+    hostapd reads a raw PSK as hex. Its config is one setting per line, so a
+    line break or NUL would cut the key (Inferred); tabs and other bytes pass.
     """
     if not key:
         return None
-    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in key):
-        return "Wi-Fi key contains a control character"
+    if any(char in "\n\r\0" for char in key):
+        return "Wi-Fi key contains a line break or NUL character"
     size = len(key.encode("utf-8"))
     if size == 64:
         return None if _HEX.match(key) else "a 64-character Wi-Fi key must be hex digits"
     if not 8 <= size <= 63:
-        return f"Wi-Fi key must be 8 to 63 characters (or 64 hex digits), got {size} bytes"
+        return "Wi-Fi key must be 8 to 63 bytes, or 64 hex digits"
     return None
 
 
