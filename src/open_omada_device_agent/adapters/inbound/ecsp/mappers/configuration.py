@@ -1,6 +1,7 @@
 """Parse Omada AP SET_REQUEST bodies into platform-independent domain updates."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -26,6 +27,8 @@ from .....contexts.wireless.schedule import (
 from .....shared.domain import SecretValue
 
 AccessPointConfigUpdate = ApplyDeviceConfigurationCommand
+
+log = logging.getLogger("open_omada.ecsp.config")
 
 RADIO_KEYS: dict[str, RadioBand] = {
     "wirelessBasic_2G": RadioBand.TWO_G,
@@ -407,11 +410,7 @@ def _parse_ssid_item(
         broadcast=_optional_bool(data.get("ssidBcast")),
         client_isolation=_optional_bool(data.get("ssidIsolation")),
         load_balance=_optional_bool(data.get("loadBalance")),
-        rate_control=(
-            RateControl.from_codes(int(data["rateCtl"]), _optional_int(data.get("manageRateCtl")) or 0)
-            if data.get("rateCtl") is not None
-            else None
-        ),
+        rate_control=_rate_control(data),
         vlan=WirelessVlanIntent(
             vlan_id=vlan_id,
             vlan_pool_ids=tuple(str(value) for value in data.get("vlanPoolIds") or ()),
@@ -746,6 +745,17 @@ def _parse_schedule(body: Mapping[str, Any]) -> ScheduleChange | None:
         list_rules=tuple(list_rules),
         assoc_rules=tuple(assoc_rules),
     )
+
+
+def _rate_control(data: Mapping[str, Any]) -> RateControl | None:
+    """``rateCtl``/``manageRateCtl``; None when absent or not a number (Unknown values are not applied)."""
+    try:
+        rate_ctl = _optional_int(data.get("rateCtl"))
+        manage = _optional_int(data.get("manageRateCtl")) or 0
+    except (TypeError, ValueError):
+        log.warning("Ignoring 802.11 Rate Control with a non-numeric rateCtl/manageRateCtl")
+        return None
+    return None if rate_ctl is None else RateControl.from_codes(rate_ctl, manage)
 
 
 def _mac_filter_rules(raw: Any, label: str) -> list[Mapping[str, Any]]:
