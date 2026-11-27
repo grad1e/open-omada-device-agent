@@ -146,6 +146,8 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- The raw controller data inside SSID objects (which holds the Wi-Fi key)
+  no longer appears in their `repr`.
 - A portal SSID is refused before anything is written when openNDS would run
   on the AP's uplink. The SSID used to be written first and the SET refused
   afterwards, leaving the SSID broadcasting with no portal in front of it.
