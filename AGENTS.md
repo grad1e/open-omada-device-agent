@@ -69,6 +69,12 @@ Deploy to a lab AP: `scripts/deploy-openwrt.sh --host root@<ap> [--env FILE]`
   (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/` + short name), open a PR
   into `develop`, and merge with Rebase and merge once CI passes. `main`
   mirrors upstream. Details: CONTRIBUTING.md, "Branches and merging".
+- Push branches to the fork and open pull requests there:
+  `grad1e/open-omada-device-agent` (`gh pr create -R grad1e/open-omada-device-agent
+  --base develop`; without `-R`, `gh` may target upstream). Never push to,
+  open pull requests on, or comment on upstream
+  (`adryanalencar/open-omada-device-agent`). In a clone where `origin` is
+  upstream, block it: `git remote set-url --push origin no-push`.
 - One logical change per commit, with its tests in the same commit. Each
   commit must pass `pytest` and `ruff`.
 - [Conventional Commits](https://www.conventionalcommits.org/):
