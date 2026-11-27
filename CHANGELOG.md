@@ -9,11 +9,12 @@ All notable project changes will be documented in this file.
 - SSID security from the controller's "WPA Mode", PMF and 802.11r settings:
   WPA-PSK, WPA2-PSK and WPA/WPA2-PSK with Auto (TKIP+AES) or AES cipher,
   PMF Mandatory/Capable/Disable (`ieee80211w`), and 802.11r fast roaming
-  (`ieee80211r`, the controller's mobility domain, `ft_psk_generate_local`
-  and FT key holders from the controller's key). WPA3 and 802.11r are now
+  (`ieee80211r` with the controller's mobility domain; WPA2 SSIDs derive
+  the FT keys locally, WPA2/WPA3 SSIDs get FT key holders from the
+  controller's key). WPA3 and 802.11r are now
   enabled when the AP's hostapd supports them (`hostapd -vsae`, `-v11r`);
   `OMADA_CAP_WPA3_PSK=false` or `OMADA_CAP_80211R=false` turns them off.
-  Unknown version, cipher or PMF codes are refused. Each SET logs the SSID
+  Unknown version, cipher (including TKIP only) or PMF codes are refused. Each SET logs the SSID
   security settings (no keys).
 - `docs/protocol-status.md`: a "Parked work" section listing known gaps
   that are deliberately on hold, why, and what would unblock them, and the

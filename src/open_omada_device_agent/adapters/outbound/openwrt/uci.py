@@ -572,9 +572,9 @@ def _wlan_lines(
 # Omada WPA-Personal codes (Observed, lab, Controller 6.3.0.111, SSID editor
 # "WPA Mode"): pskVer 1 = WPA-PSK, 2 = WPA2-PSK, 3 = WPA/WPA2-PSK,
 # 4 = WPA2-PSK/WPA3-SAE; pskCipher 1 = Auto (TKIP+AES), 3 = AES. The editor
-# offers no TKIP-only choice; 2 = TKIP is Inferred from the gap.
+# offers no TKIP-only choice, so code 2 is refused rather than guessed.
 PSK_ENCRYPTION = {1: "psk", 2: "psk2", 3: "psk-mixed", 4: "sae-mixed"}
-PSK_CIPHER_SUFFIX = {1: "+tkip+ccmp", 2: "+tkip", 3: "+ccmp"}
+PSK_CIPHER_SUFFIX = {1: "+tkip+ccmp", 3: "+ccmp"}
 PSK_VERSION_WPA3 = 4
 # pmfMode 1 = Mandatory, 2 = Capable, 3 = Disable (Observed, same editor) ->
 # hostapd ieee80211w 2 / 1 / 0.
@@ -596,7 +596,8 @@ def _psk_errors(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> li
         errors.append(f"unsupported WPA cipher code {security.psk_cipher}")
     if security.pmf_mode is not None and security.pmf_mode not in PMF_IEEE80211W:
         errors.append(f"unsupported PMF mode code {security.pmf_mode}")
-    if security.fast_roaming:
+    # WPA (v1) gets no 802.11r lines, so a leftover enable11r is not checked.
+    if security.fast_roaming and version != 1:
         if not capabilities.supports_80211r:
             errors.append("802.11r requested but the 802.11r capability is disabled (hostapd without 11r)")
         domain = security.ft_mobility_domain or ""
@@ -637,11 +638,17 @@ def _fast_transition_lines(section: str, security: WirelessSecurity) -> tuple[st
         _set("wireless", section, "ieee80211r", "1"),
         _set("wireless", section, "mobility_domain", (security.ft_mobility_domain or "").lower()),
         _set("wireless", section, "ft_over_ds", "0"),
-        # FT-PSK: each AP derives the keys from the PSK, no key exchange.
-        _set("wireless", section, "ft_psk_generate_local", "1"),
     ]
+    if security.psk_version != PSK_VERSION_WPA3:
+        # FT-PSK only: each AP derives the keys from the PSK, no key exchange.
+        lines.append(_set("wireless", section, "ft_psk_generate_local", "1"))
+        return tuple(lines)
+    # FT-SAE cannot derive keys locally. OpenWrt (wifi/ap.uc, hostapd.sh) reads
+    # r0kh/r1kh only when ft_psk_generate_local is 0; without them it derives a key from
+    # the mobility domain and the PSK, which only other OpenWrt APs share.
+    lines.append(_set("wireless", section, "ft_psk_generate_local", "0"))
     if security.ft_key is not None:
-        # FT-SAE needs key holders; every AP in the site gets the same key.
+        # Every AP in the site gets the same key from the controller.
         key = security.ft_key.reveal().lower()
         lines.append(f"add_list wireless.{section}.r0kh='ff:ff:ff:ff:ff:ff,*,{_uci_quote(key)}'")
         lines.append(

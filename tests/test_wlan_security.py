@@ -87,6 +87,7 @@ def test_wpa3_needs_the_wpa3_capability():
     [
         ({"pskVer": 9}, "unsupported WPA-Personal version code 9"),
         ({"pskVer": 2, "pskCipher": 7}, "unsupported WPA cipher code 7"),
+        ({"pskVer": 2, "pskCipher": 2}, "unsupported WPA cipher code 2"),  # TKIP only
         ({"pskVer": 2, "pmfMode": 5}, "unsupported PMF mode code 5"),
     ],
 )
@@ -116,7 +117,8 @@ def test_pmf_mode_maps_to_ieee80211w(version, pmf, expected):
     assert options.get("ieee80211w") == expected
 
 
-def test_80211r_writes_mobility_domain_and_key_holders():
+def test_80211r_on_wpa3_uses_the_controller_key_holders():
+    # OpenWrt reads r0kh/r1kh only when ft_psk_generate_local is 0.
     update = _update(
         pskVer=4,
         pskCipher=3,
@@ -128,9 +130,39 @@ def test_80211r_writes_mobility_domain_and_key_holders():
     assert options["ieee80211r"] == "1"
     assert options["mobility_domain"] == "a4cb"
     assert options["ft_over_ds"] == "0"
-    assert options["ft_psk_generate_local"] == "1"
+    assert options["ft_psk_generate_local"] == "0"
     assert options["r0kh"] == (f"ff:ff:ff:ff:ff:ff,*,{FT_KEY}",)
     assert options["r1kh"] == (f"00:00:00:00:00:00,00:00:00:00:00:00,{FT_KEY}",)
+
+
+def test_80211r_on_wpa3_without_a_key_leaves_the_key_to_openwrt():
+    update = _update(pskVer=4, fastTransition={"enable11r": True, "mobilityDomain": "A4CB"})
+
+    options = _options(build_uci_batch(update, _caps()))
+
+    assert options["ft_psk_generate_local"] == "0"
+    assert "r0kh" not in options and "r1kh" not in options
+
+
+@pytest.mark.parametrize("version", [2, 3])
+def test_80211r_on_wpa2_derives_keys_locally(version):
+    update = _update(
+        pskVer=version,
+        pskCipher=3,
+        fastTransition={"enable11r": True, "mobilityDomain": "A4CB", "keyRrb": FT_KEY},
+    )
+
+    options = _options(build_uci_batch(update, _caps()))
+
+    assert options["ieee80211r"] == "1"
+    assert options["ft_psk_generate_local"] == "1"
+    assert "r0kh" not in options and "r1kh" not in options
+
+
+def test_leftover_80211r_on_wpa_v1_is_not_checked():
+    update = _update(pskVer=1, fastTransition={"enable11r": True})
+
+    assert validate_update(update, _caps(supports_80211r=False)) == ()
 
 
 def test_80211r_off_or_on_wpa_v1_writes_nothing():
