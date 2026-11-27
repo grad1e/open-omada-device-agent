@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from ....contexts.portal.domain import PortalClientState
 from ....shared.domain import MacAddress
+from .nftables import replace_table_script
 from .uci import CommandRunner, SubprocessRunner
 from ....portal import PortalSession
 
@@ -40,16 +41,10 @@ class NftablesPortalAdapter:
         except ValueError as exc:
             return PortalEnforcementResult(applied=False, error=str(exc))
 
-        existing = self._runner.run(["nft", "list", "table", "inet", NFT_TABLE])
-        if existing.returncode == 0:
-            deleted = self._runner.run(["nft", "delete", "table", "inet", NFT_TABLE])
-            if deleted.returncode != 0:
-                return PortalEnforcementResult(
-                    applied=False,
-                    error=(deleted.stderr or deleted.stdout or "nft delete table failed").strip(),
-                )
-
-        loaded = self._runner.run(["nft", "-f", "-"], input_text=rules)
+        loaded = self._runner.run(
+            ["nft", "-f", "-"],
+            input_text=replace_table_script("inet", NFT_TABLE, rules),
+        )
         if loaded.returncode != 0:
             return PortalEnforcementResult(
                 applied=False,

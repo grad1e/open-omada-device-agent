@@ -16,13 +16,10 @@ SAFE_UPLINK_ANSWERS = {
 @dataclass
 class RecordingRunner:
     calls: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
-    table_exists: bool = False
 
     def run(self, args, *, input_text=None):
         command = tuple(args)
         self.calls.append((command, input_text))
-        if command == ("nft", "list", "table", "inet", "openomada_portal"):
-            return CommandResult(returncode=0 if self.table_exists else 1)
         if command in SAFE_UPLINK_ANSWERS:
             return CommandResult(returncode=0, stdout=SAFE_UPLINK_ANSWERS[command])
         return CommandResult(returncode=0)
@@ -51,7 +48,7 @@ def test_portal_runtime_applies_nft_policy_for_portal_wlan_and_free_policy():
             },
         }
     )
-    runner = RecordingRunner(table_exists=False)
+    runner = RecordingRunner()
 
     result = OpenWrtPortalRuntime(
         runner,
@@ -61,13 +58,11 @@ def test_portal_runtime_applies_nft_policy_for_portal_wlan_and_free_policy():
 
     assert result.applied is True
     assert result.changed is True
-    assert runner.calls[0][0] == ("nft", "list", "table", "inet", "openomada_portal")
-    assert runner.calls[1][0] == ("nft", "-f", "-")
-    assert "iifname \"wlan0\" tcp dport 80 redirect to :8080" in (
-        runner.calls[1][1] or ""
-    )
-    assert "192.0.2.10" in (runner.calls[1][1] or "")
-    assert "not-an-ip" not in (runner.calls[1][1] or "")
+    assert [call[0] for call in runner.calls] == [("nft", "-f", "-")]
+    script = runner.calls[0][1] or ""
+    assert "iifname \"wlan0\" tcp dport 80 redirect to :8080" in script
+    assert "192.0.2.10" in script
+    assert "not-an-ip" not in script
 
 
 def test_portal_runtime_rejects_missing_interface():

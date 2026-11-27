@@ -13,14 +13,20 @@ from open_omada_device_agent.portal_enforcement import (
 @dataclass
 class RecordingRunner:
     calls: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
-    table_exists: bool = True
 
     def run(self, args, *, input_text=None):
         command = tuple(args)
         self.calls.append((command, input_text))
-        if command == ("nft", "list", "table", "inet", "openomada_portal"):
-            return CommandResult(returncode=0 if self.table_exists else 1)
         return CommandResult(returncode=0)
+
+
+@dataclass
+class FailingLoadRunner:
+    calls: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
+
+    def run(self, args, *, input_text=None):
+        self.calls.append((tuple(args), input_text))
+        return CommandResult(returncode=1, stderr="syntax error\n")
 
 
 def test_build_nftables_rules_for_authenticated_and_blocked_clients():
@@ -47,7 +53,7 @@ def test_build_nftables_rules_for_authenticated_and_blocked_clients():
 
 
 def test_nftables_adapter_replaces_existing_table_without_shell():
-    runner = RecordingRunner(table_exists=True)
+    runner = RecordingRunner()
     adapter = NftablesPortalAdapter(runner)
 
     result = adapter.apply(
@@ -56,11 +62,23 @@ def test_nftables_adapter_replaces_existing_table_without_shell():
     )
 
     assert result.applied is True
-    assert runner.calls[0][0] == ("nft", "list", "table", "inet", "openomada_portal")
-    assert runner.calls[1][0] == ("nft", "delete", "table", "inet", "openomada_portal")
-    assert runner.calls[2][0] == ("nft", "-f", "-")
-    assert runner.calls[2][1] is not None
-    assert "elements = {  }" not in runner.calls[2][1]
+    # One nft transaction: the old table stays until the new one loads.
+    assert [call[0] for call in runner.calls] == [("nft", "-f", "-")]
+    script = runner.calls[0][1] or ""
+    assert script.startswith(
+        "table inet openomada_portal {}\ndelete table inet openomada_portal\ntable inet openomada_portal {\n"
+    )
+    assert "elements = {  }" not in script
+
+
+def test_nftables_adapter_reports_a_failed_load():
+    runner = FailingLoadRunner()
+
+    result = NftablesPortalAdapter(runner).apply(PortalPolicy(interface="br-guest", redirect_port=8080), ())
+
+    assert result.applied is False
+    assert result.error == "syntax error"
+    assert len(runner.calls) == 1
 
 
 def test_nftables_adapter_rejects_invalid_interface():

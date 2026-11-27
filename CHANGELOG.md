@@ -174,6 +174,10 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- The nftables portal fallback (without openNDS) and client rate limits
+  deleted their table before loading the new one, so clients were briefly
+  unfiltered and a failed load left no rules. Both now swap the table in
+  one `nft -f -` transaction.
 - Radio settings, SSIDs and telemetry used the radio number (radio0 =
   2.4 GHz), so on boards whose radio0 is 5 GHz the 2.4 GHz settings went to
   the 5 GHz radio. Radios are now matched by their UCI `band` (`ubus`

@@ -13,6 +13,7 @@ from .... import config
 from ....application.commands import ApplyDeviceConfigurationCommand
 from ....contexts.clients.domain import ClientOperationCode, ClientRateConfig
 from ....shared.domain import MacAddress
+from .nftables import replace_table_script
 from .uci import CommandRunner, SubprocessRunner
 from ....application.contracts import PlatformCapabilities
 
@@ -306,28 +307,10 @@ class OpenWrtClientControlAdapter:
         self,
         rate_config: ClientRateConfig,
     ) -> DeviceCommandResult:
-        existing = self._runner.run(
-            ["nft", "list", "table", "bridge", NFT_CLIENT_RATE_TABLE]
-        )
-        if existing.returncode == 0:
-            deleted = self._runner.run(
-                ["nft", "delete", "table", "bridge", NFT_CLIENT_RATE_TABLE]
-            )
-            if deleted.returncode != 0:
-                return DeviceCommandResult(
-                    applied=False,
-                    error=(
-                        deleted.stderr
-                        or deleted.stdout
-                        or "nft client rate table delete failed"
-                    ).strip(),
-                )
+        rules = build_client_rate_limit_nftables_rules(self._rate_limit_interface, rate_config)
         loaded = self._runner.run(
             ["nft", "-f", "-"],
-            input_text=build_client_rate_limit_nftables_rules(
-                self._rate_limit_interface,
-                rate_config,
-            ),
+            input_text=replace_table_script("bridge", NFT_CLIENT_RATE_TABLE, rules),
         )
         if loaded.returncode != 0:
             return DeviceCommandResult(
