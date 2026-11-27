@@ -138,8 +138,9 @@ OMADA_TLS_CA_FILE=/etc/open-omada/controller-ca.pem
 | `OMADA_RADIO_BANDS` | `2g` | Comma-separated supported AP bands: `2g,5g,5g2,6g` |
 | `OMADA_MAX_SSIDS` | `4` | Manual upper bound for SSIDs the platform adapter will accept. On OpenWrt, `iw list` can reduce this automatically when the radio does not support multiple AP interfaces. |
 | `OMADA_CAP_WLAN` | auto on OpenWrt with `uci` | Enable WLAN/radio UCI reconciliation |
-| `OMADA_CAP_WPA2_PSK` | auto on OpenWrt with `uci` | Accept WPA2-PSK WLANs |
-| `OMADA_CAP_WPA3_PSK` | `false` | Accept WPA3-PSK WLANs |
+| `OMADA_CAP_WPA2_PSK` | auto on OpenWrt with `uci` | Accept WPA-Personal WLANs: WPA-PSK, WPA2-PSK and WPA/WPA2-PSK, with Auto (TKIP+AES) or AES |
+| `OMADA_CAP_WPA3_PSK` | auto when `hostapd -vsae` succeeds | Accept WPA2-PSK/WPA3-SAE WLANs (`sae-mixed`) |
+| `OMADA_CAP_80211R` | auto when `hostapd -v11r` succeeds | Accept 802.11r fast roaming (FT-PSK and FT-SAE) |
 | `OMADA_CAP_SSID_VLAN` | `false` | Accept SSID VLAN mapping |
 | `OMADA_CAP_DYNAMIC_VLAN` | `false` | Accept dynamic VLAN requests |
 | `OMADA_CAP_MANAGEMENT_VLAN` | `false` | Accept management VLAN requests |

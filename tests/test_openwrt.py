@@ -352,7 +352,7 @@ def test_reconcile_rejects_wpa3_psk_when_capability_is_disabled():
         {
             "ssid_2G": {
                 "radioId": 0,
-                "ssid": [{"ssidName": "lab", "pskVer": 3, "pskKey": "secret"}],
+                "ssid": [{"ssidName": "lab", "pskVer": 4, "pskKey": "secret"}],
             }
         }
     )

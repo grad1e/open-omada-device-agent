@@ -424,6 +424,16 @@ def _parse_ssid_item(
                 if isinstance(fast_transition, Mapping)
                 else None
             ),
+            ft_mobility_domain=(
+                _optional_str(fast_transition.get("mobilityDomain"))
+                if isinstance(fast_transition, Mapping)
+                else None
+            ),
+            ft_key=(
+                SecretValue(str(fast_transition["keyRrb"]))
+                if isinstance(fast_transition, Mapping) and fast_transition.get("keyRrb")
+                else None
+            ),
             raw=dict(data),
         ),
         portal=CaptivePortalIntent(

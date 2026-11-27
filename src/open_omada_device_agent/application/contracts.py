@@ -17,6 +17,7 @@ class PlatformCapabilities:
     supports_wlan_config: bool = False
     supports_wpa2_psk: bool = False
     supports_wpa3_psk: bool = False
+    supports_80211r: bool = False
     supports_wpa_enterprise: bool = False
     supports_radius: bool = False
     supports_ssid_vlan: bool = False

@@ -19,6 +19,7 @@ from .iw_phy import DFS_REGIONS, parse_dfs_region, parse_iw_list
 
 CommandExists = Callable[[str], str | None]
 CommandOutput = Callable[[tuple[str, ...]], str | None]
+CommandSucceeds = Callable[[tuple[str, ...]], bool]
 
 
 def detect_platform_capabilities(
@@ -26,9 +27,11 @@ def detect_platform_capabilities(
     env: Mapping[str, str] | None = None,
     command_exists: CommandExists | None = None,
     command_output: CommandOutput | None = None,
+    command_succeeds: CommandSucceeds | None = None,
 ) -> PlatformCapabilities:
     values = env if env is not None else os.environ
     which = command_exists or shutil.which
+    succeeds = command_succeeds or _run_command_succeeds
 
     platform = _platform(values)
     has_uci = which("uci") is not None
@@ -42,6 +45,10 @@ def detect_platform_capabilities(
     radio_bands = _radio_bands(values.get("OMADA_RADIO_BANDS", "2g"))
     max_ssids = _int(values, "OMADA_MAX_SSIDS", 4)
     wlan_possible = openwrt and has_uci
+    # ``hostapd -v<feature>`` exits 0 when the build has it (wpad-basic has
+    # SAE and 802.11r; Validated on wpad-basic-mbedtls 2025.08.26).
+    hostapd_sae = wlan_possible and has_hostapd and succeeds(("hostapd", "-vsae"))
+    hostapd_11r = wlan_possible and has_hostapd and succeeds(("hostapd", "-v11r"))
     iw_output = _iw_list_output(
         openwrt=openwrt,
         command_exists=which,
@@ -73,7 +80,8 @@ def detect_platform_capabilities(
         max_ssids=max(0, max_ssids),
         supports_wlan_config=_feature(values, "OMADA_CAP_WLAN", wlan_possible),
         supports_wpa2_psk=_feature(values, "OMADA_CAP_WPA2_PSK", wlan_possible),
-        supports_wpa3_psk=_feature(values, "OMADA_CAP_WPA3_PSK", False),
+        supports_wpa3_psk=_feature(values, "OMADA_CAP_WPA3_PSK", hostapd_sae),
+        supports_80211r=_feature(values, "OMADA_CAP_80211R", hostapd_11r),
         supports_wpa_enterprise=_feature(values, "OMADA_CAP_WPA_ENTERPRISE", False),
         supports_radius=_feature(values, "OMADA_CAP_RADIUS", False),
         supports_ssid_vlan=_feature(values, "OMADA_CAP_SSID_VLAN", False),
@@ -133,6 +141,7 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_wlan_config",
         "supports_wpa2_psk",
         "supports_wpa3_psk",
+        "supports_80211r",
         "supports_wpa_enterprise",
         "supports_radius",
         "supports_ssid_vlan",
@@ -255,6 +264,14 @@ def _iw_supports_ap_mode(output: str) -> bool:
         if line.strip() == "* AP":
             return True
     return False
+
+
+def _run_command_succeeds(args: tuple[str, ...]) -> bool:
+    try:
+        result = subprocess.run(args, capture_output=True, check=False, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def _run_command_output(args: tuple[str, ...]) -> str | None:
