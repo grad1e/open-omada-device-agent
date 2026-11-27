@@ -103,6 +103,9 @@ def test_radio_facts_widths():
     assert radio_facts(five).max_width == 80
     assert radio_facts(replace(five, he160=True)).max_width == 160
     assert radio_facts(RadioHardware(RadioBand.TWO_G)).max_width == 20
+    # VHT reported on 2.4 GHz does not make the radio 80 MHz wide.
+    vht_2g = RadioHardware(RadioBand.TWO_G, ht40=True, vht=True, vht160=True, streams=2)
+    assert radio_facts(vht_2g).max_width == 40
 
 
 def test_table_holds_only_the_allowed_facts():
