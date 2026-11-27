@@ -6,6 +6,10 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- 802.11 Rate Control from the SSID editor: the minimum rate, management
+  rate, "require clients" and 1 Mbps beacons are applied as the radio's
+  `supported_rates`, `basic_rate` and `beacon_rate`. OpenWrt sets rates per
+  radio, so SSIDs on one radio that disagree leave it on its defaults.
 - WLAN schedules (Profiles > Time Range on an SSID): the agent turns the
   SSID off, or keeps it on only, during the time range, in the site's local
   time. It checks once a minute while connected to the controller.

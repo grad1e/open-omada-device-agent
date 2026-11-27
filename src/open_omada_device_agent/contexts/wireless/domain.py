@@ -139,6 +139,50 @@ class CaptivePortalIntent:
     # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
+# 802.11 Rate Control (Observed: lab, Controller 6.3.0.111). Each SSID item
+# carries ``rateCtl`` and ``manageRateCtl``; 0 means off. Bits 0-11 are the
+# allowed legacy rates (kb/s, in this order), bit 16 turns the control on.
+# ``rateCtl`` bit 17 = "Require Clients to Use Rates at or Above the Minimum
+# Rate", bit 18 = "Send Beacons at 1 Mbps". ``manageRateCtl`` carries one
+# rate bit: the management (basic) rate.
+RATE_CONTROL_RATES = (1000, 2000, 5500, 11000, 6000, 9000, 12000, 18000, 24000, 36000, 48000, 54000)
+RATE_CONTROL_ENABLE = 1 << 16
+RATE_CONTROL_REQUIRE = 1 << 17
+RATE_CONTROL_BEACON_1M = 1 << 18
+_RATE_BITS = (1 << len(RATE_CONTROL_RATES)) - 1
+CCK_RATES = frozenset({1000, 2000, 5500, 11000})
+
+
+@dataclass(frozen=True)
+class RateControl:
+    """One SSID's 802.11 Rate Control; ``enabled`` False means off."""
+    enabled: bool = False
+    rates: tuple[int, ...] = ()  # kb/s, ascending
+    require_minimum: bool = False
+    beacon_1mbps: bool = False
+    management_rate: int | None = None  # kb/s
+    # Bits the agent does not know (Unknown); a non-zero value is refused.
+    unknown_bits: int = 0
+
+    @classmethod
+    def from_codes(cls, rate_ctl: int, manage_rate_ctl: int = 0) -> "RateControl":
+        known = _RATE_BITS | RATE_CONTROL_ENABLE | RATE_CONTROL_REQUIRE | RATE_CONTROL_BEACON_1M
+        unknown = (rate_ctl & ~known) | (manage_rate_ctl & ~(_RATE_BITS | RATE_CONTROL_ENABLE))
+        management = _rates(manage_rate_ctl) if manage_rate_ctl & RATE_CONTROL_ENABLE else ()
+        return cls(
+            enabled=bool(rate_ctl & RATE_CONTROL_ENABLE),
+            rates=_rates(rate_ctl),
+            require_minimum=bool(rate_ctl & RATE_CONTROL_REQUIRE),
+            beacon_1mbps=bool(rate_ctl & RATE_CONTROL_BEACON_1M),
+            management_rate=management[0] if management else None,
+            unknown_bits=unknown,
+        )
+
+
+def _rates(code: int) -> tuple[int, ...]:
+    return tuple(sorted(rate for bit, rate in enumerate(RATE_CONTROL_RATES) if code >> bit & 1))
+
+
 @dataclass(frozen=True)
 class WirelessNetwork:
     band: RadioBand
@@ -154,6 +198,8 @@ class WirelessNetwork:
     portal: CaptivePortalIntent
     # SSID "Load Balance" (SET ``loadBalance``): 802.11k/v client steering.
     load_balance: bool | None = None
+    # 802.11 Rate Control (SET ``rateCtl`` / ``manageRateCtl``).
+    rate_control: RateControl | None = None
     # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 

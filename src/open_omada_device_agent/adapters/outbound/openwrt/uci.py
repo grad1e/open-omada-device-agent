@@ -21,8 +21,8 @@ from ....application.commands import ApplyDeviceConfigurationCommand
 from ....contexts.wireless.domain import (
     MAC_FILTER_ANY_LIST, MAC_FILTER_DELETE, MAC_FILTER_OPERATIONS, MAC_FILTER_TYPE_GROUP,
     MacFilterChange, MacFilterPolicy, MacFilterState,
-    RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, WirelessNetwork,
-    WirelessSecurity,
+    CCK_RATES, RadioAdvancedConfig, RadioBand, RadioConfig, RadioHardware, RateControl,
+    WirelessNetwork, WirelessSecurity,
 )
 from ....contexts.wireless.schedule import (
     SCHEDULE_DELETE, SCHEDULE_OPERATIONS, SCHEDULE_SELECT_DAYS, SCHEDULE_TYPES, MINUTES_PER_DAY,
@@ -332,6 +332,7 @@ def validate_update(
             errors.extend(_psk_errors(wlan, capabilities))
         if wlan.load_balance and not capabilities.supports_80211k:
             errors.append("Load Balance requested but the 802.11k capability is disabled")
+        errors.extend(_rate_control_errors(wlan))
         if (
             wlan.security.radius_auth is not None
             or wlan.security.radius_accounting is not None
@@ -425,6 +426,8 @@ def build_uci_batch(
                 hardware=capabilities.hardware_for(radio.band),
             )
         )
+    for band in update.wlan_bands:
+        lines.extend(_rate_control_lines(band, active_wlans, wireless_state))
     radio_uapsd = _radio_uapsd(wireless_state)
     rebuilt = {_wlan_section(wlan) for wlan in active_wlans}
     for advanced in update.radio_advanced:
@@ -960,6 +963,74 @@ def _management_vlan_lines(
             f"{device}.{management_vlan.vlan_id}",
         ),
     )
+
+
+# wifi-device option marking rate options the agent wrote, so it only removes
+# its own.
+RATE_CONTROL_OPTION = "openomada_rates"
+_RATE_OPTIONS = ("supported_rates", "basic_rate", "beacon_rate")
+
+
+def _band_rates(rate_control: RateControl, band: RadioBand) -> tuple[int, ...]:
+    """Allowed rates on ``band``: 802.11b (CCK) rates exist on 2.4 GHz only."""
+    if band == RadioBand.TWO_G:
+        return rate_control.rates
+    return tuple(rate for rate in rate_control.rates if rate not in CCK_RATES)
+
+
+def _rate_control_errors(wlan: WirelessNetwork) -> list[str]:
+    control = wlan.rate_control
+    if control is None:
+        return []
+    errors = []
+    if control.unknown_bits:
+        errors.append(f"unsupported 802.11 Rate Control bits {control.unknown_bits:#x}")
+    if control.enabled and not _band_rates(control, wlan.band):
+        errors.append(f"802.11 Rate Control on {wlan.band.value} allows no rate")
+    return errors
+
+
+def _rate_control_lines(
+    band: RadioBand,
+    active_wlans: Sequence[WirelessNetwork],
+    wireless_state: WirelessState,
+) -> tuple[str, ...]:
+    """Radio rate options for ``band``: hostapd sets rates per radio, not per SSID."""
+    wlans = [wlan for wlan in active_wlans if wlan.band == band]
+    sections = {_radio_section(wlan.band, wlan.radio_id) for wlan in wlans} or {_radio_section(band, None)}
+    lines: list[str] = []
+    for section in sorted(sections):
+        on_radio = [wlan for wlan in wlans if _radio_section(wlan.band, wlan.radio_id) == section]
+        wanted = {
+            wlan.rate_control if wlan.rate_control is not None and wlan.rate_control.enabled else None
+            for wlan in on_radio
+        }
+        control = next(iter(wanted)) if len(wanted) == 1 else None
+        if len(wanted) > 1:
+            log.warning(
+                "SSIDs on %s ask for different 802.11 Rate Control; OpenWrt sets rates per radio, "
+                "so the radio keeps its default rates",
+                section,
+            )
+        owned = wireless_state.get(section, {}).get(RATE_CONTROL_OPTION) == "1"
+        if control is None:
+            if owned:
+                lines.extend(f"delete wireless.{section}.{option}" for option in (*_RATE_OPTIONS, RATE_CONTROL_OPTION))
+            continue
+        rates = _band_rates(control, band)
+        supported = sorted(set(rates) | ({control.management_rate} if control.management_rate else set()))
+        if control.management_rate:
+            basic = sorted({control.management_rate} | (set(rates) if control.require_minimum else set()))
+        else:
+            basic = list(rates) if control.require_minimum else [rates[0]]
+        lines.extend(f"delete wireless.{section}.{option}" for option in _RATE_OPTIONS)
+        lines.extend(f"add_list wireless.{section}.supported_rates='{rate}'" for rate in supported)
+        lines.extend(f"add_list wireless.{section}.basic_rate='{rate}'" for rate in basic)
+        if control.beacon_1mbps and band == RadioBand.TWO_G:
+            # 1 Mbps exists on 2.4 GHz only. hostapd beacon_rate is in 100 kb/s units (Validated: Jio, mt76).
+            lines.append(_set("wireless", section, "beacon_rate", "10"))
+        lines.append(_set("wireless", section, RATE_CONTROL_OPTION, "1"))
+    return tuple(lines)
 
 
 def _radio_section(band: RadioBand, radio_id: int | None) -> str:
