@@ -102,7 +102,7 @@ def _batches(runner):
     return [text for args, text in runner.calls if args == ("uci", "-q", "batch")]
 
 
-def test_refused_ssid_left_open_by_an_earlier_apply_is_turned_off():
+def test_refused_ssid_left_open_by_an_earlier_apply_is_removed():
     # An older agent wrote this PPSK SSID as an open network.
     runner = _Runner(_show(ssid="lab", encryption="none"))
     result = OpenWrtUciAdapter(runner).reconcile(_update(securityMode=4), _caps())
@@ -110,24 +110,77 @@ def test_refused_ssid_left_open_by_an_earlier_apply_is_turned_off():
     assert not result.applied
     assert result.changed
     assert "PPSK is not supported" in result.error
-    assert _batches(runner) == ["set wireless.openomada_2g_1.disabled='1'\ncommit wireless\n"]
+    assert "removed the open SSID" in result.error
+    assert _batches(runner) == ["delete wireless.openomada_2g_1\ncommit wireless\n"]
     assert ("wifi", "reload") in [args for args, _ in runner.calls]
 
 
 @pytest.mark.parametrize(
     "options",
     [
-        {"encryption": "psk2+ccmp"},  # secured: left as it is
-        {"encryption": "none", "disabled": "1"},  # already off
+        {"disabled": "1"},  # turned off by hand or an older fix
+        {"disabled": "1", "openomada_schedule_off": "1"},  # off by schedule: the tick would turn it back on
     ],
 )
-def test_refused_ssid_that_is_not_open_and_up_is_left_alone(options):
-    runner = _Runner(_show(**options))
+def test_refused_open_ssid_that_is_off_is_removed_too(options):
+    runner = _Runner(_show(encryption="none", **options))
+    OpenWrtUciAdapter(runner).reconcile(_update(securityMode=2), _caps())
+
+    assert _batches(runner) == ["delete wireless.openomada_2g_1\ncommit wireless\n"]
+
+
+def test_refused_ssid_that_is_secured_is_left_alone():
+    runner = _Runner(_show(encryption="psk2+ccmp"))
     result = OpenWrtUciAdapter(runner).reconcile(_update(securityMode=2), _caps())
 
     assert not result.applied
     assert not result.changed
     assert _batches(runner) == []
+
+
+def test_ssids_past_the_limit_are_not_checked():
+    # The SET is refused for the first SSID's VLAN; the PPSK one is past
+    # max_ssids, so it is never applied or checked.
+    show = "wireless.openomada_2g_2=wifi-iface\nwireless.openomada_2g_2.openomada_managed='1'\n"
+    runner = _Runner(show)
+    items = [
+        {"index": 1, "ssidName": "lab", "securityMode": 0, "vlanId": 10},
+        {"index": 2, "ssidName": "extra", "securityMode": 4},
+    ]
+    update = parse_config_body({"ssid_2G": {"radioId": 0, "ssid": items}})
+    result = OpenWrtUciAdapter(runner).reconcile(update, _caps(max_ssids=1, supports_ssid_vlan=False))
+
+    assert not result.applied
+    assert _batches(runner) == []
+
+
+class _FailingRunner(_Runner):
+    def __init__(self, show, fail):
+        super().__init__(show)
+        self.fail = fail
+
+    def run(self, args, *, input_text=None):
+        if tuple(args[: len(self.fail)]) == self.fail:
+            self.calls.append((tuple(args), input_text))
+            return CommandResult(1, "", "failed")
+        return super().run(args, input_text=input_text)
+
+
+@pytest.mark.parametrize(
+    ("fail", "changed"),
+    [
+        (("uci", "-q", "show"), False),
+        (("uci", "-q", "batch"), False),
+        (("wifi", "reload"), True),
+    ],
+)
+def test_failures_still_refuse_the_set(fail, changed):
+    runner = _FailingRunner(_show(encryption="none"), fail)
+    result = OpenWrtUciAdapter(runner).reconcile(_update(securityMode=4), _caps())
+
+    assert not result.applied
+    assert result.changed is changed
+    assert "PPSK is not supported" in result.error
 
 
 def test_other_refusals_do_not_touch_open_ssids():

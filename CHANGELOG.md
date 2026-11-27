@@ -183,8 +183,9 @@ All notable project changes will be documented in this file.
   is then not applied until the SSID is changed in the controller.
 - An SSID an earlier agent version had already created as an open network
   for one of those modes stayed open, since a refused SET writes nothing.
-  The agent now turns such an SSID off when it refuses it; it comes back
-  once the controller sends a Security mode the agent can apply.
+  The agent now removes such an SSID when it refuses it (even one switched
+  off, which the WLAN schedule could turn back on); it comes back once the
+  controller sends a Security mode the agent can apply.
 - On boards with two 5 GHz radios, startup checked the second radio's Auto
   channel list against the first radio's channels, so a high-band radio's
   list could be replaced with low-band channels it cannot use. Each 5 GHz
