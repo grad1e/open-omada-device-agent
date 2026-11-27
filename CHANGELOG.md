@@ -6,6 +6,8 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- `docs/protocol-status.md`: a "Parked work" section listing known gaps
+  that are deliberately on hold, why, and what would unblock them.
 - `OMADA_DEVICE_MODEL=auto` picks the Omada AP model closest to the AP's
   radios (bands, spatial streams, widest channel, Wi-Fi generation, transmit
   power) from a table generated from the controller's model templates. With a

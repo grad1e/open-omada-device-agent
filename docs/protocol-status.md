@@ -99,6 +99,17 @@ identifiers.
 | Gateway profile | 🚧 | Not implemented |
 | OLT profile | 🚧 | Not implemented |
 
+## Parked work
+
+Known gaps that are deliberately not being worked on now, and why.
+
+| Item | Why it is parked | What would unblock it |
+| --- | --- | --- |
+| Guest logout (portal logout domain) | The controller sends `controllerSetting.logoutDomain` (acknowledged, not applied). What a real EAP does when a guest opens it (redirect, record removal, `EVENT_PORTAL_AUTH`) is Unknown. | Observe it on a real EAP, then map it to openNDS deauthentication (est. 2 h). |
+| Switch and other device profiles | The agent reports itself as an AP in several places (`device: "ap"`). A device-neutral refactor is the groundwork for switch profiles; it changes nothing visible for an AP. | A concrete switch target to test against (est. one day for the refactor). |
+| 160 MHz and DFS under country IN | wireless-regdb gives India `DFS-UNSET`, so hostapd cannot do radar detection and disables the radio; DFS channels and 160 MHz stay hidden (Validated: lab AP, OpenWrt 25.12). Patching the local regulatory database was declined. | A DFS region for IN in upstream wireless-regdb. |
+| Periodic rogue AP scan | Controller 6.3.0.111 stores an unsolicited `rogueApList` as rogue APs only on cloud-based controllers; software and hardware controllers ignore it (Observed). Scanning also costs off-channel time. | A local controller that shows the results. |
+
 ## Capability policy
 
 A protocol component should not be added to the advertised component map merely
