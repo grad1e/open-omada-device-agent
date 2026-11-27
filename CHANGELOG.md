@@ -138,10 +138,14 @@ All notable project changes will be documented in this file.
 ### Fixed
 
 - A failed `ip addr add` for the DHCP fallback address is logged and tried
-  again after 30 s, instead of being recorded as in use.
+  again after 30 s, instead of being recorded as in use. When the fallback
+  address is changed while in use, the swap happens at once (also after an
+  agent restart) and the controller is told if the old address is gone.
 - An AP without a default route (a network with no internet) can run openNDS
   on a routed guest bridge: the route to the controller then identifies the
-  uplink.
+  uplink. This needs `OMADA_CONTROLLER_HOST` as an IPv4 address; while the
+  uplink is unknown, openNDS is no longer started when a portal SSID arrives
+  (it used to start without a default route).
 - `--once` exits with an error when the discovery cannot be sent (no route)
   instead of retrying forever.
 - Client snooping no longer logs an error with a traceback when the LAN

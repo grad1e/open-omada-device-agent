@@ -443,7 +443,7 @@ def test_opennds_is_not_restarted_on_the_uplink_bridge():
     result = OpenNdsPortalAdapter(runner).apply(opennds_portal_policy_from_free_policy(PortalFreePolicy()))
 
     assert result.applied is False
-    assert "carries the default route" in result.error
+    assert "is the AP's uplink" in result.error
     assert ("/etc/init.d/opennds", "restart") not in runner.calls
 
 
@@ -517,7 +517,7 @@ def test_without_a_default_route_the_route_to_the_controller_is_the_uplink():
     # The controller is reached over the portal interface: never capture it.
     runner = _NoDefaultRouteRunner("br-lan", [], default_route="")
     result = OpenNdsPortalAdapter(runner, controller_host=lambda: "192.0.2.10").apply(policy)
-    assert result.applied is False and "carries the default route" in result.error
+    assert result.applied is False and "is the AP's uplink" in result.error
     assert ("/etc/init.d/opennds", "restart") not in runner.calls
 
     # A controller host name is not looked up.
