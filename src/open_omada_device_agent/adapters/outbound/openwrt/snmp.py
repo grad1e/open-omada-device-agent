@@ -24,7 +24,7 @@ from ....contexts.device.domain import (
     SNMP_PRIVACY_MODES,
     SnmpConfig,
 )
-from .uci import CommandRunner, ReconciliationResult, SubprocessRunner
+from .uci import CommandRunner, ReconciliationResult, SubprocessRunner, uci_quote
 
 log = logging.getLogger("open_omada.snmp")
 
@@ -220,8 +220,7 @@ class OpenWrtSnmpAdapter:
 
 
 def _set(section: str, option: str, value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace("'", "'\\''")
-    return f"set snmpd.{section}.{option}='{escaped}'"
+    return f"set snmpd.{section}.{option}='{uci_quote(value)}'"
 
 
 def _unquote(value: str) -> str:

@@ -174,6 +174,9 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- A backslash in an SSID name, Wi-Fi key, 802.11r key, SNMP community or
+  other UCI value was stored doubled (`pa\ss` became `pa\\ss`): libuci
+  reads single-quoted values literally, so only `'` is escaped now.
 - WPA/WPA2-PSK SSIDs (`pskVer` 3) were written as WPA2/WPA3 (`sae-mixed`)
   and refused without the WPA3 capability, and WPA2-PSK/WPA3-SAE
   (`pskVer` 4) was written as plain WPA2. Both now map correctly.

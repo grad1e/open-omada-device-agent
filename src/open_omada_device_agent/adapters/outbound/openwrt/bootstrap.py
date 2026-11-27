@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from ....application.contracts import PlatformCapabilities
 from ....contexts.wireless.domain import RadioBand
 from .opennds import uplink_capture_message, uplink_device
-from .uci import CommandRunner, SubprocessRunner, usable_channels
+from .uci import CommandRunner, SubprocessRunner, uci_quote, usable_channels
 
 
 log = logging.getLogger("open_omada.openwrt.bootstrap")
@@ -193,7 +193,7 @@ class OpenWrtStartupBootstrap:
             if kept == current:
                 continue
             value = " ".join(kept) if kept else " ".join(map(str, usable))
-            lines.append(f"set wireless.{radio}.channels='{_uci_quote(value)}'")
+            lines.append(f"set wireless.{radio}.channels='{uci_quote(value)}'")
             pruned.append(f"{radio} -> {value}")
         if not lines:
             return OpenWrtBootstrapResult(applied=True)
@@ -409,7 +409,7 @@ class OpenWrtStartupBootstrap:
     ) -> None:
         if self._uci_get(f"{config}.{section}.{option}") == value:
             return
-        lines.append(f"set {config}.{section}.{option}='{_uci_quote(value)}'")
+        lines.append(f"set {config}.{section}.{option}='{uci_quote(value)}'")
 
     def _uci_get(self, path: str) -> str:
         result = self._runner.run(("uci", "-q", "get", path))
@@ -427,10 +427,6 @@ class OpenWrtStartupBootstrap:
                 continue
             return line[len(config) + 1 : -len(suffix)]
         return None
-
-
-def _uci_quote(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("'", "'\\''")
 
 
 def _command_warning(command: tuple[str, ...], result) -> str:

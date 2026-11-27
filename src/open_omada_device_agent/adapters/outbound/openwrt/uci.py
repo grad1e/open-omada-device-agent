@@ -918,9 +918,9 @@ def _fast_transition_lines(section: str, security: WirelessSecurity) -> tuple[st
     if security.ft_key is not None:
         # Every AP in the site gets the same key from the controller.
         key = security.ft_key.reveal().lower()
-        lines.append(f"add_list wireless.{section}.r0kh='ff:ff:ff:ff:ff:ff,*,{_uci_quote(key)}'")
+        lines.append(f"add_list wireless.{section}.r0kh='ff:ff:ff:ff:ff:ff,*,{uci_quote(key)}'")
         lines.append(
-            f"add_list wireless.{section}.r1kh='00:00:00:00:00:00,00:00:00:00:00:00,{_uci_quote(key)}'"
+            f"add_list wireless.{section}.r1kh='00:00:00:00:00:00,00:00:00:00:00:00,{uci_quote(key)}'"
         )
     return tuple(lines)
 
@@ -1155,11 +1155,17 @@ def _radio_htmode(
 
 
 def _set(config: str, section: str, option: str, value: str) -> str:
-    return f"set {config}.{section}.{option}='{_uci_quote(value)}'"
+    return f"set {config}.{section}.{option}='{uci_quote(value)}'"
 
 
-def _uci_quote(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("'", "'\\''")
+def uci_quote(value: str) -> str:
+    """Escape ``value`` for use inside single quotes in a ``uci batch`` line.
+
+    libuci reads everything between single quotes literally (uci/file.c,
+    parse_single_quote), so only the quote itself needs escaping: close the
+    quote, add an escaped quote, reopen. A backslash stays as it is.
+    """
+    return value.replace("'", "'\\''")
 
 
 def _slug(value: str) -> str:
