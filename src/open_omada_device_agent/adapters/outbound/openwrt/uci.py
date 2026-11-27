@@ -135,6 +135,12 @@ class OpenWrtUciAdapter:
                     "the driver keeps OFDMA on for Wi-Fi 6",
                     advanced.band.value,
                 )
+        if any(wlan.load_balance for wlan in update.wlans):
+            log.info(
+                "Load Balance on: 802.11k%s advertised only; no steering daemon "
+                "(usteer) moves clients",
+                "/v" if capabilities.supports_80211v else "",
+            )
         batch = build_uci_batch(
             update,
             capabilities,

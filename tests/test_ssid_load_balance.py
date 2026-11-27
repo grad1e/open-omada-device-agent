@@ -78,13 +78,17 @@ def test_load_balance_off_is_accepted_without_the_capability():
     assert validate_update(_update(loadBalance=0), _caps(supports_80211k=False)) == ()
 
 
-def _detect(succeeding, env=None):
-    tools = {"uci", "ubus", "hostapd"}
+def _detect(succeeding, env=None, tools=("uci", "ubus", "hostapd"), calls=None):
+    def succeeds(args):
+        if calls is not None:
+            calls.append(args)
+        return args in succeeding
+
     return detect_platform_capabilities(
         env={"OMADA_PLATFORM": "openwrt", **(env or {})},
         command_exists=lambda name: f"/usr/sbin/{name}" if name in tools else None,
         command_output=lambda args: None,
-        command_succeeds=lambda args: args in succeeding,
+        command_succeeds=succeeds,
     )
 
 
@@ -105,3 +109,23 @@ def test_80211k_and_80211v_can_be_switched_off():
     )
 
     assert (caps.supports_80211k, caps.supports_80211v) == (False, False)
+
+
+def test_no_hostapd_means_no_80211k_or_v_and_no_grep():
+    calls = []
+    caps = _detect(set(), tools=("uci", "ubus"), calls=calls)
+
+    assert (caps.supports_80211k, caps.supports_80211v) == (False, False)
+    assert not any(args[0] == "grep" for args in calls)
+
+
+def test_not_openwrt_means_no_80211k_or_v():
+    caps = _detect(set(), env={"OMADA_PLATFORM": "generic"})
+
+    assert (caps.supports_80211k, caps.supports_80211v) == (False, False)
+
+
+def test_80211v_can_be_forced_on():
+    caps = _detect(set(), env={"OMADA_CAP_80211V": "true"})
+
+    assert caps.supports_80211v is True
