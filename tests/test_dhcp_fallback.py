@@ -166,3 +166,38 @@ def test_fallback_only_edit_swaps_the_active_address(tmp_path):
     ]
     assert (tmp_path / "fallback").read_text().startswith("192.0.2.253/24 br-lan")
     assert changes == [30, 35]
+
+
+def test_failed_swap_reports_the_removed_address(tmp_path):
+    ap = _Ap()
+    fallback, clock, changes = _fallback(tmp_path, ap)
+    fallback.check()
+    clock["now"] = 30
+    fallback.check()
+    assert changes == [30]
+
+    real_run = ap.run
+
+    def run(args, *, input_text=None):
+        if args[:4] == ["ip", "-4", "addr", "add"]:
+            return CommandResult(2, "", "RTNETLINK answers: File exists\n")
+        return real_run(args, input_text=input_text)
+
+    ap.run = run
+    ap.show = FALLBACK_SHOW.replace("192.0.2.254/24", "192.0.2.253/24")
+    clock["now"] = 35
+    fallback.check()
+    assert "addr del 192.0.2.254/24 dev br-lan" in ap.ip
+    assert changes == [30, 35]  # the controller learns the old address is gone
+    assert not (tmp_path / "fallback").exists()
+
+
+def test_swap_after_an_agent_restart_does_not_wait(tmp_path):
+    ap = _Ap()
+    (tmp_path / "fallback").write_text("192.0.2.254/24 br-lan -\n")  # left by the previous run
+    ap.show = FALLBACK_SHOW.replace("192.0.2.254/24", "192.0.2.253/24")
+    fallback, clock, changes = _fallback(tmp_path, ap)
+    clock["now"] = 100
+    fallback.check()
+    assert ap.ip[:2] == ["addr del 192.0.2.254/24 dev br-lan", "addr add 192.0.2.253/24 dev br-lan"]
+    assert changes == [100]

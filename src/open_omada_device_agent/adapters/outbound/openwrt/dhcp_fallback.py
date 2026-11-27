@@ -103,13 +103,17 @@ class DhcpFallback:
                 )
                 self._on_change()
             return
+        swapped_out = False
         if active:
             if active.address == address and active.device == device:
                 return
             self._remove(active)
+            swapped_out = True
         now = self._clock()
         if self._without_lease_since is None:
-            self._without_lease_since = now
+            # A fallback already in use (e.g. before an agent restart) means
+            # DHCP had no lease: swap to the new address at once.
+            self._without_lease_since = now - self._delay if swapped_out else now
         if now - self._without_lease_since < self._delay:
             return
         error = self._add(address, device, gateway)
@@ -117,6 +121,8 @@ class DhcpFallback:
             # Try again after another delay instead of every check.
             self._without_lease_since = now
             log.warning("IP Settings: could not add the fallback address %s: %s", address, error)
+            if swapped_out:
+                self._on_change()  # the old fallback address is gone
             return
         log.warning(
             "IP Settings: no DHCP lease on %s after %.0fs; using the fallback address %s",

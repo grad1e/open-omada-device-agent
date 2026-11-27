@@ -96,7 +96,8 @@ def uplink_capture_message(interface: str, uplink: str | None = None) -> str:
             "sends the portal again."
         )
     return (
-        f"openNDS gateway interface {interface} carries the default route: the "
+        f"openNDS gateway interface {interface} is the AP's uplink (it carries the "
+        "default route, or the route to the controller when there is none): the "
         "uplink router would be treated as an unauthenticated portal client and "
         "the AP would lose its controller connection. Put portal SSIDs on a "
         "routed guest network (OMADA_PORTAL_NETWORK, OMADA_OPENNDS_INTERFACE)."
