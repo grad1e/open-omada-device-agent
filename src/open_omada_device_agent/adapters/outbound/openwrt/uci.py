@@ -100,7 +100,8 @@ class OpenWrtUciAdapter:
         )
         for wlan in update.wlans:
             log.info(
-                "SSID %s %s security: pskVer=%s pskCipher=%s pmfMode=%s 802.11r=%s mobilityDomain=%s",
+                "SSID %s %s security: pskVer=%s pskCipher=%s pmfMode=%s 802.11r=%s mobilityDomain=%s"
+                " loadBalance=%s",
                 wlan.band.value,
                 wlan.index if wlan.index is not None else wlan.ssid_id,
                 wlan.security.psk_version,
@@ -108,6 +109,7 @@ class OpenWrtUciAdapter:
                 wlan.security.pmf_mode,
                 wlan.security.fast_roaming,
                 wlan.security.ft_mobility_domain,
+                wlan.load_balance,
             )
         if errors:
             return ReconciliationResult(
@@ -228,6 +230,8 @@ def validate_update(
             errors.append("portal WLAN requested but platform capability is disabled")
         if wlan.security.psk_key is not None:
             errors.extend(_psk_errors(wlan, capabilities))
+        if wlan.load_balance and not capabilities.supports_80211k:
+            errors.append("Load Balance requested but the 802.11k capability is disabled")
         if (
             wlan.security.radius_auth is not None
             or wlan.security.radius_accounting is not None
@@ -566,6 +570,14 @@ def _wlan_lines(
         lines.extend(_fast_transition_lines(section, wlan.security))
     else:
         lines.append(_set("wireless", section, "encryption", "none"))
+    if wlan.load_balance:
+        # 802.11k neighbour and beacon reports, plus 802.11v BSS transition
+        # management when hostapd has it (wpad-basic refuses bss_transition and
+        # the radio stays down). They let a steering daemon (usteer) move
+        # clients; hostapd alone only advertises them.
+        lines.append(_set("wireless", section, "ieee80211k", "1"))
+        if capabilities.supports_80211v:
+            lines.append(_set("wireless", section, "bss_transition", "1"))
     return tuple(lines)
 
 

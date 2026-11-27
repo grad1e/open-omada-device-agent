@@ -152,6 +152,8 @@ class WirelessNetwork:
     vlan: WirelessVlanIntent
     security: WirelessSecurity
     portal: CaptivePortalIntent
+    # SSID "Load Balance" (SET ``loadBalance``): 802.11k/v client steering.
+    load_balance: bool | None = None
     # The SSID's raw controller data holds the Wi-Fi key: keep it out of repr.
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False)
 

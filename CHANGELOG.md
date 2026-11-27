@@ -6,6 +6,11 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- SSID "Load Balance" turns on 802.11k (`ieee80211k`), and 802.11v
+  (`bss_transition`) when the AP's hostapd has it. `wpad-basic` has no
+  802.11v, so only 802.11k is written there. Clients are not moved yet:
+  that needs a steering daemon such as `usteer`. `OMADA_CAP_80211K` and
+  `OMADA_CAP_80211V` override the detection.
 - SSID security from the controller's "WPA Mode", PMF and 802.11r settings:
   WPA-PSK, WPA2-PSK and WPA/WPA2-PSK with Auto (TKIP+AES) or AES cipher,
   PMF Mandatory/Capable/Disable (`ieee80211w`), and 802.11r fast roaming

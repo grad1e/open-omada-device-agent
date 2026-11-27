@@ -395,6 +395,7 @@ def _parse_ssid_item(
         name=name,
         broadcast=_optional_bool(data.get("ssidBcast")),
         client_isolation=_optional_bool(data.get("ssidIsolation")),
+        load_balance=_optional_bool(data.get("loadBalance")),
         vlan=WirelessVlanIntent(
             vlan_id=vlan_id,
             vlan_pool_ids=tuple(str(value) for value in data.get("vlanPoolIds") or ()),
