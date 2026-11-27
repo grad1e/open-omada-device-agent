@@ -110,6 +110,17 @@ Known gaps that are deliberately not being worked on now, and why.
 | 160 MHz and DFS under country IN | wireless-regdb gives India `DFS-UNSET`, so hostapd cannot do radar detection and disables the radio; DFS channels and 160 MHz stay hidden (Validated: lab AP, OpenWrt 25.12). Patching the local regulatory database was declined. | A DFS region for IN in upstream wireless-regdb. |
 | Periodic rogue AP scan | Controller 6.3.0.111 stores an unsolicited `rogueApList` as rogue APs only on cloud-based controllers; software and hardware controllers ignore it (Observed). Scanning also costs off-channel time. | A local controller that shows the results. |
 
+## Waiting for a real EAP or switch
+
+These need a real Omada EAP or switch next to the agent; the lab has neither.
+
+| Test | What to check |
+| --- | --- |
+| Portal logout | On a real EAP, open the controller's logout domain as an authorised guest: where does it redirect, is the guest record removed, is `EVENT_PORTAL_AUTH` sent? (est. 10 min) |
+| Management VLAN | Set a management VLAN on the AP and confirm it stays reachable from the controller, and that a bad VLAN rolls back (est. 10 min) |
+| Fixed-IP reservation | Reserve a fixed IP for the AP in the controller and confirm the AP gets it over DHCP (est. 10 min) |
+| LLDP neighbours | With the AP cabled to an Omada switch: do the switch's chassis ID, port and capabilities show for the AP in the controller, do they clear after LLDP Off, and which chassis ID does the switch see for the AP? (est. 10 min) |
+
 ## Capability policy
 
 A protocol component should not be added to the advertised component map merely
