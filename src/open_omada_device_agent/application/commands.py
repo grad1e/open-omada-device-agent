@@ -8,7 +8,9 @@ from ..contexts.device.domain import (
 )
 from ..contexts.networking.domain import LanIpSetting, ManagementVlan
 from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
-from ..contexts.wireless.domain import RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork
+from ..contexts.wireless.domain import (
+    MacFilterChange, RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork,
+)
 
 @dataclass(frozen=True)
 class ApplyDeviceConfigurationCommand:
@@ -34,6 +36,7 @@ class ApplyDeviceConfigurationCommand:
     time_zone: TimeZoneSetting | None = None
     lan_ip: LanIpSetting | None = None
     radio_advanced: tuple[RadioAdvancedConfig, ...] = ()
+    mac_filter: MacFilterChange | None = None
     passive_keys: tuple[str, ...] = ()
     ack_only_keys: tuple[str, ...] = ()
     unhandled_keys: tuple[str, ...] = ()

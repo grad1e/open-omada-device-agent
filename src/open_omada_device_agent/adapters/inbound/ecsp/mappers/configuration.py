@@ -15,6 +15,7 @@ from .....contexts.device.domain import (
 from .....contexts.networking.domain import LanIpSetting, ManagementVlan, validate_vlan_id
 from .....contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from .....contexts.wireless.domain import (
+    MacFilterAssocRule, MacFilterChange, MacFilterListRule,
     CaptivePortalIntent, ClientLimit, RadioAdvancedConfig, RadioBand, RadioConfig,
     WirelessDhcpOption82Intent,
     WirelessNetwork, WirelessSecurity, WirelessVlanIntent, validate_ssid_name,
@@ -61,7 +62,6 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
     "ipGroup",
     "ipv6Group",
     "logSetting",
-    "macFilterGlobal",
     "schedulerGlobal",
     "ssh",
 }
@@ -83,12 +83,16 @@ ACK_ONLY_CONFIG_KEYS: set[str] = set()
 # Tools -> Network Check: one SET key per tool.
 NETWORK_CHECK_KEYS = ("ping", "traceroute", "dnslookup", "arptable")
 
+# MAC filtering: the global switch, the MAC groups and their SSID links.
+MAC_FILTER_KEYS = ("macFilterGlobal", "macFilterList", "macFilterAssoc")
+
 KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PASSIVE_CONFIG_KEYS | {
     "clientConfig",
     "clientOperation",
     "clientOperation_cmd",
     "clientRateConfig",
     "lanSetting",
+    *MAC_FILTER_KEYS,
     "led",
     "managementVlan",
     "portalConfigList",
@@ -198,6 +202,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         lldp=_parse_lldp(body.get("lldp")),
         time_zone=parse_time_zone(body),
         lan_ip=_parse_lan_setting(body.get("lanSetting")),
+        mac_filter=_parse_mac_filter(body),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
@@ -656,6 +661,55 @@ def _iter_items(raw: Any, label: str) -> Iterable[Any]:
     if isinstance(raw, Iterable) and not isinstance(raw, (str, bytes, bytearray)):
         return raw
     raise ValueError(f"{label} must be an object or array")
+
+
+def _parse_mac_filter(body: Mapping[str, Any]) -> MacFilterChange | None:
+    if not any(key in body for key in MAC_FILTER_KEYS):
+        return None
+    global_raw = _optional_mapping(body.get("macFilterGlobal")) or {}
+    list_rules = []
+    for item in _mac_filter_rules(body.get("macFilterList"), "macFilterList"):
+        list_rules.append(
+            MacFilterListRule(
+                operation=_required_int(item, "operation", "macFilterList"),
+                list_id=_required_int(item, "listId", "macFilterList"),
+                rule_id=_optional_int(item.get("ruleId")),
+                mac=str(item["mac"]) if item.get("mac") is not None else None,
+            )
+        )
+    assoc_rules = []
+    for item in _mac_filter_rules(body.get("macFilterAssoc"), "macFilterAssoc"):
+        assoc_rules.append(
+            MacFilterAssocRule(
+                operation=_required_int(item, "operation", "macFilterAssoc"),
+                ssid_id=_required_int(item, "ssidId", "macFilterAssoc"),
+                band=_required_int(item, "band", "macFilterAssoc"),
+                list_id=_required_int(item, "listId", "macFilterAssoc"),
+                action=_optional_int(item.get("action")) or 0,
+                type=_optional_int(item.get("type")) or 0,
+            )
+        )
+    return MacFilterChange(
+        enabled=_optional_bool(global_raw.get("enable")),
+        list_rules=tuple(list_rules),
+        assoc_rules=tuple(assoc_rules),
+    )
+
+
+def _mac_filter_rules(raw: Any, label: str) -> list[Mapping[str, Any]]:
+    if raw is None:
+        return []
+    rules = _require_mapping(raw, label).get("rule") or []
+    if not isinstance(rules, list):
+        raise ValueError(f"{label}.rule must be a list")
+    return [_require_mapping(item, f"{label} rule") for item in rules]
+
+
+def _required_int(item: Mapping[str, Any], key: str, label: str) -> int:
+    value = _optional_int(item.get(key))
+    if value is None:
+        raise ValueError(f"{label} rule has no {key}")
+    return value
 
 
 def _require_mapping(value: Any, label: str) -> Mapping[str, Any]:
