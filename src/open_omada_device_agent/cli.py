@@ -86,6 +86,9 @@ def main() -> None:
         )
     except KeyboardInterrupt:
         log.info("Stopped")
+    except discovery.DiscoveryUnreachable as exc:
+        log.error("%s", exc)
+        raise SystemExit(1) from exc
     except Exception:
         log.exception("Fatal ECSP state-machine error")
         raise SystemExit(1)

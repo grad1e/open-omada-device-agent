@@ -142,6 +142,8 @@ All notable project changes will be documented in this file.
 - An AP without a default route (a network with no internet) can run openNDS
   on a routed guest bridge: the route to the controller then identifies the
   uplink.
+- `--once` exits with an error when the discovery cannot be sent (no route)
+  instead of retrying forever.
 - Client snooping no longer logs an error with a traceback when the LAN
   bridge goes down for a moment during a network reload.
 - After an IP Settings change or a DHCP fallback switch, the controller is
