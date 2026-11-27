@@ -22,7 +22,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 def _row(model, gen, *radios, hw="1.0"):
     return {
-        "model": model, "hw_version": hw, "gen": gen, "dfs": True, "regions": [],
+        "model": model, "model_version": hw, "hardware_version": hw, "gen": gen, "dfs": True, "regions": [],
         "radios": [
             {"band": b, "nss": n, "max_width": w, "min_tx": 5, "max_tx": p} for b, n, w, p in radios
         ],
@@ -68,7 +68,8 @@ def test_jio_hardware_matches_eap683_ur_in_the_real_table():
     assert generation(hardware) == 6
     assert sorted((f.band, f.nss, f.max_width) for f in facts) == [("2g", 4, 40), ("5g", 4, 160)]
     match = best_model(generation(hardware), facts)
-    assert (match.model, match.hw_version, match.exact) == ("EAP683 UR", "1.0", True)
+    assert (match.model, match.model_version, match.hardware_version, match.exact) == (
+        "EAP683 UR", "1.0", "1.0", True)
 
 
 def _settings(model, version="4.0"):
@@ -88,7 +89,7 @@ def test_auto_setting_uses_the_match_and_others_are_left_alone(caplog):
     caplog.set_level("INFO", logger="open_omada.model")
     caps = _caps(parse_iw_list(FIXTURE.read_text()))
     chosen = resolve_model(_settings("auto"), caps)
-    assert (chosen.model, chosen.model_version) == ("EAP683 UR", "1.0")
+    assert (chosen.model, chosen.model_version, chosen.hardware_version) == ("EAP683 UR", "1.0", "1.0")
     fixed = _settings("EAP650", "2.0")
     assert resolve_model(fixed, caps) is fixed
     assert "Closest Omada model for these radios: EAP683 UR" in caplog.text
@@ -105,7 +106,7 @@ def test_radio_facts_widths():
 
 
 def test_table_holds_only_the_allowed_facts():
-    allowed_row = {"model", "hw_version", "regions", "gen", "dfs", "radios"}
+    allowed_row = {"model", "model_version", "hardware_version", "regions", "gen", "dfs", "radios"}
     allowed_radio = {"band", "nss", "min_tx", "max_tx", "max_width"}
     assert len(MODELS) > 50
     for row in MODELS:
@@ -123,7 +124,7 @@ def test_generator_reduces_a_template(tmp_path, monkeypatch):
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     adopt = {
-        "deviceInfo": {"hwId": "X", "ip": "192.0.2.5"},
+        "deviceInfo": {"hwId": "X", "ip": "192.0.2.5", "modelVersion": "2.0", "hardwareVersion": "2.0"},
         "devCap": {"supportRadioMode2G": 180, "supportRadioMode5G": 368, "mimo2G": 2},
         "deviceMisc": {"supportDfs": 7},
         "radioCap": [{"radioId": 0, "mimo": 2, "minPow": 7, "maxPow": 20},
@@ -137,7 +138,7 @@ def test_generator_reduces_a_template(tmp_path, monkeypatch):
     other = dict(record, model="EAP-X(US)")
     rows = gen.build([record, other, {"type": "switch"}])
     assert rows == [{
-        "model": "EAP-X", "hw_version": "2.0", "regions": ["EU", "US"], "gen": 6, "dfs": True,
+        "model": "EAP-X", "model_version": "2.0", "hardware_version": "2.0", "regions": ["EU", "US"], "gen": 6, "dfs": True,
         "radios": [
             {"band": "2g", "nss": 2, "min_tx": 7, "max_tx": 20, "max_width": 40},
             {"band": "5g", "nss": 2, "min_tx": 6, "max_tx": 27, "max_width": 160},
@@ -156,3 +157,37 @@ def test_generator_reduces_a_template(tmp_path, monkeypatch):
 def test_auto_is_case_insensitive(value):
     caps = _caps(parse_iw_list(FIXTURE.read_text()))
     assert resolve_model(_settings(value), caps).model == "EAP683 UR"
+
+
+def _gen():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("gen", SCRIPTS / "gen_omada_models.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    return gen
+
+
+def test_generator_orders_versions_numerically_and_keeps_device_values():
+    gen = _gen()
+    assert gen.version_key("v1.0") < gen.version_key("1.20") < gen.version_key("2.0") < gen.version_key("10.0")
+
+    def record(region, model_version, hardware_version, streams):
+        adopt = {
+            "deviceInfo": {"modelVersion": model_version, "hardwareVersion": hardware_version},
+            "devCap": {"supportRadioMode2G": 180},
+            "radioCap": [{"radioId": 0, "mimo": streams, "minPow": 1, "maxPow": 20}],
+            "channelInfo": [{"radioId": 0, "band": "2.4G", "channelList": []}],
+        }
+        # hw_version is the template's own field; devices never send values like 1.6.7.
+        return {"model": f"EAP-Y({region})", "hw_version": "1.6.7", "type": "ap",
+                "adopt_resp": json.dumps(adopt)}
+
+    rows = gen.build([record("EU", "2.0", "2.0", 4), record("US", "10.0", "10.0", 2),
+                      record("JP", 1, 1, 1)])
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row["model_version"], row["hardware_version"]) == ("10.0", "10.0")
+    assert row["radios"][0]["nss"] == 2  # facts of the newest version
+    assert row["regions"] == ["EU", "JP", "US"]
+    assert gen.reduce_template(record("JP", 1, 1, 1))["model_version"] == "1"

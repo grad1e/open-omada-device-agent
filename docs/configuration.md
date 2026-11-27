@@ -63,13 +63,14 @@ device list (Observed).
 ### Choosing the model automatically
 
 `OMADA_DEVICE_MODEL=auto` reads the radios from `iw list` at start and picks
-the Omada AP model that is closest to them, also setting the model version
-(`OMADA_DEVICE_MODEL_VERSION` is then ignored). A model must have the same
+the Omada AP model that is closest to them, with the model and hardware
+versions a real one sends at adoption (`OMADA_DEVICE_MODEL_VERSION` and
+`OMADA_DEVICE_HARDWARE_VERSION` are then ignored). A model must have the same
 bands. Among those the agent prefers one that claims nothing the hardware
 cannot do (a newer Wi-Fi generation, more spatial streams, wider channels),
 then the one that falls short of it least, then a plain model over an
 `-Outdoor`/`-Wall`/... variant, then the closest transmit power. The log names
-the choice: `OMADA_DEVICE_MODEL=auto: using EAP683 UR 1.0 (exact match)`.
+the choice: `OMADA_DEVICE_MODEL=auto: using EAP683 UR (model version 1.0, hardware version 1.0; exact match)`.
 With a fixed model the agent logs the closest model instead, as a hint.
 
 The models come from a table of a few facts per model, generated from
