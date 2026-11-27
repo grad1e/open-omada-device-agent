@@ -114,17 +114,19 @@ class ScheduleState:
         assoc = {} if full_sync else dict(self.assoc)
         if change.enabled is not None:
             enabled = change.enabled
-        for rule in change.list_rules:
-            if rule.rule_id is None:
-                if rule.operation == SCHEDULE_DELETE:
+        # Deletes first: an edit is sent as delete plus add (Observed), and
+        # the order inside one SET, or a reused ruleId, must not drop the new
+        # period (Inferred safeguard).
+        ordered = sorted(change.list_rules, key=lambda rule: rule.operation != SCHEDULE_DELETE)
+        for rule in ordered:
+            if rule.operation == SCHEDULE_DELETE:
+                if rule.rule_id is None:
                     profiles.pop(rule.profile_id, None)
-                else:
-                    profiles.setdefault(rule.profile_id, {})
+                elif rule.profile_id in profiles:
+                    profiles[rule.profile_id].pop(rule.rule_id, None)
                 continue
             periods = profiles.setdefault(rule.profile_id, {})
-            if rule.operation == SCHEDULE_DELETE:
-                periods.pop(rule.rule_id, None)
-            elif rule.period is not None:
+            if rule.rule_id is not None and rule.period is not None:
                 periods[rule.rule_id] = rule.period
         for rule in change.assoc_rules:
             key = (rule.ssid_id, rule.band)
@@ -139,8 +141,9 @@ class ScheduleState:
         if not self.enabled or ssid_id is None or (ssid_id, band) not in self.assoc:
             return False
         profile_id, action = self.assoc[(ssid_id, band)]
-        if profile_id not in self.profiles:
-            # A deleted time range schedules nothing.
+        if not self.profiles.get(profile_id):
+            # A deleted or empty time range schedules nothing; with "radio
+            # on during the range" it would otherwise keep the SSID off.
             return False
         in_range = any(period.covers(moment) for period in self.profiles[profile_id].values())
         return in_range if action == SCHEDULE_OFF_IN_RANGE else not in_range

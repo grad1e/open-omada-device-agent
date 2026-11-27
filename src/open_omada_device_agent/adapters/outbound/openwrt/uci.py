@@ -100,7 +100,9 @@ class OpenWrtUciAdapter:
         # survive an agent restart.
         self._state_file = state_file
         self._mac_filter, self._schedule = _load_wireless_state(state_file)
-        # Local time (the site time zone the agent wrote to OpenWrt).
+        # Local time in the site time zone the agent wrote to OpenWrt. A
+        # running agent follows a zone change: OpenWrt's libc re-reads
+        # /etc/TZ (Observed: Jio, offset changed without a restart).
         self._clock = clock
         self._ticked = False
 
@@ -226,10 +228,10 @@ class OpenWrtUciAdapter:
         """
         if self._ticked and not (self._schedule.enabled and self._schedule.assoc):
             return None
-        self._ticked = True
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
             return None
+        self._ticked = True
         wireless_state = parse_uci_show(result.stdout)
         now = self._clock()
         lines: list[str] = []

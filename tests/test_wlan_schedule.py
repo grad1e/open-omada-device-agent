@@ -268,3 +268,97 @@ def test_use_case_tick_reaches_platform_ports():
     ).tick()
 
     assert ticks == [1]
+
+
+def test_period_delete_for_an_unknown_range_does_not_turn_the_ssid_off():
+    # E.g. the state file was lost: only the assoc and a period delete are known.
+    state = _state(schedulerGlobal={"enable": True}, schedulerAssoc=_assoc(1))
+    state = state.apply(
+        ScheduleChange(list_rules=(ScheduleListRule(operation=2, profile_id=PROFILE_ID, rule_id=9),)),
+        full_sync=False,
+    )
+
+    assert PROFILE_ID not in state.profiles
+    assert not state.ssid_off(SSID_ID, 0, MONDAY_NOON)
+
+
+def test_add_before_delete_with_the_same_rule_id_keeps_the_new_period():
+    state = _state(schedulerGlobal={"enable": True}, schedulerList=_range(), schedulerAssoc=_assoc(0))
+    friday = SchedulePeriod("Select Days", 5, 480, 1080)
+    state = state.apply(
+        ScheduleChange(
+            list_rules=(
+                ScheduleListRule(operation=1, profile_id=PROFILE_ID, rule_id=1, period=friday),
+                ScheduleListRule(operation=2, profile_id=PROFILE_ID, rule_id=1),
+            )
+        ),
+        full_sync=False,
+    )
+
+    assert state.profiles[PROFILE_ID] == {1: friday}
+
+
+def test_overnight_sunday_range_runs_into_monday():
+    sunday_night = SchedulePeriod("Select Days", 7, 22 * 60, 6 * 60)
+
+    assert sunday_night.covers(datetime(2026, 11, 29, 23, 0))  # Sunday 23:00
+    assert sunday_night.covers(datetime(2026, 11, 30, 5, 0))  # Monday 05:00
+    assert not sunday_night.covers(datetime(2026, 11, 30, 23, 0))  # Monday 23:00
+
+
+class _FailingRunner(_Runner):
+    def __init__(self, show="", fail=()):
+        super().__init__(show)
+        self.fail = fail
+
+    def run(self, args, *, input_text=None):
+        if self.fail and tuple(args[: len(self.fail)]) == self.fail:
+            self.calls.append((tuple(args), input_text))
+            return CommandResult(1, "", "failed")
+        return super().run(args, input_text=input_text)
+
+
+_SHOW = (
+    "wireless.openomada_2g_1=wifi-iface\nwireless.openomada_2g_1.openomada_managed='1'\n"
+    f"wireless.openomada_2g_1.openomada_ssid_id='{SSID_ID}'\n"
+)
+
+
+def test_tick_reports_a_failed_batch_or_reload():
+    for fail, changed in ((("uci", "-q", "batch"), False), (("wifi", "reload"), True)):
+        runner = _FailingRunner(show=_SHOW)
+        adapter = OpenWrtUciAdapter(runner, clock=lambda: SATURDAY_NIGHT)
+        adapter.reconcile(_full_sync(0), _caps())
+        runner.fail = fail
+
+        result = OpenWrtUciAdapter(runner, clock=lambda: SATURDAY_NOON)
+        result._schedule = adapter._schedule
+        outcome = result.tick()
+
+        assert outcome is not None and not outcome.applied and outcome.changed is changed
+
+
+def test_failed_first_uci_show_is_retried():
+    runner = _FailingRunner(fail=("uci", "-q", "show"))
+    adapter = OpenWrtUciAdapter(runner)
+
+    adapter.tick()
+    runner.fail = ()
+    adapter.tick()
+    adapter.tick()
+
+    shows = [args for args, _ in runner.calls if args[:3] == ("uci", "-q", "show")]
+    assert len(shows) == 2
+
+
+def test_session_tick_survives_an_exception(caplog):
+    from types import SimpleNamespace
+
+    from open_omada_device_agent.adoption import _tick
+
+    def boom():
+        raise RuntimeError("uci crashed")
+
+    _tick(SimpleNamespace(configuration=SimpleNamespace(tick=boom)))
+
+    assert "WLAN schedule check failed" in caplog.text
