@@ -79,6 +79,11 @@ Controller 6.3.0.111's model templates (see NOTICE). Validated: the lab AP
 before. Changing the model of an adopted AP needs a Forget and a new adoption
 in the controller.
 
+Wi-Fi 7 radios (an `EHT Iftypes: AP` block in `iw list`) and 320 MHz on
+6 GHz (`320MHz in 6GHz Supported`) are recognised (Inferred: checked against
+published `iw list` captures of Wi-Fi 7 cards, not yet on a Wi-Fi 7 OpenWrt
+AP). A 2.4 GHz radio always counts as at most 40 MHz wide.
+
 ## Device Account authentication
 
 | Variable | Description |

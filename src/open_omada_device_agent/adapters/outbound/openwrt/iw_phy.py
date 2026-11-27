@@ -67,9 +67,10 @@ def _parse_band(lines: list[str]) -> RadioHardware | None:
     if band is None:
         return None
     text = "\n".join(lines)
-    he_ap = _he_ap_block(lines)
+    he_ap = _ap_block(lines, "HE")
     he = bool(he_ap)
     he_text = "\n".join(he_ap)
+    eht_text = "\n".join(_ap_block(lines, "EHT"))
     vht = "VHT Capabilities" in text
     return RadioHardware(
         band=band,
@@ -78,6 +79,9 @@ def _parse_band(lines: list[str]) -> RadioHardware | None:
         vht160=vht and bool(re.search(r"Supported Channel Width:.*160 MHz", text)),
         he=he,
         he160=he and "HE160/" in he_text,
+        eht=bool(eht_text),
+        eht320=band is RadioBand.SIX_G
+        and ("320MHz in 6GHz Supported" in eht_text or "EHT bw=320 MHz" in eht_text),
         streams=_streams(text, he_text, vht=vht),
         channels=channels,
     )
@@ -115,13 +119,23 @@ def _band_for(channels: tuple[RadioChannel, ...]) -> RadioBand | None:
     return None
 
 
-def _he_ap_block(lines: list[str]) -> list[str]:
-    """Lines of the ``HE Iftypes`` block that applies to AP mode."""
+def _ap_block(lines: list[str], kind: str) -> list[str]:
+    """Lines of the ``HE Iftypes`` or ``EHT Iftypes`` block for AP mode.
+
+    A block ends at the next ``HE``/``EHT Iftypes`` line or the band's next
+    section (``Bitrates``, ``Frequencies``).
+    """
     block: list[str] = []
     inside = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("HE Iftypes:"):
+        if stripped.startswith(("HE Iftypes:", "EHT Iftypes:")) and not stripped.startswith(f"{kind} Iftypes:"):
+            inside = False
+            continue
+        if stripped.startswith(("Bitrates", "Frequencies")):
+            inside = False
+            continue
+        if stripped.startswith(f"{kind} Iftypes:"):
             modes = re.split(r"[,\s]+", stripped.split(":", 1)[1].strip())
             inside = "AP" in modes
             if inside:

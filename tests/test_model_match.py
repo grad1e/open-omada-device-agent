@@ -194,3 +194,24 @@ def test_generator_orders_versions_numerically_and_keeps_device_values():
     assert row["radios"][0]["nss"] == 2  # facts of the newest version
     assert row["regions"] == ["EU", "JP", "US"]
     assert gen.reduce_template(record("JP", 1, 1, 1))["model_version"] == "1"
+
+
+WIFI7 = Path(__file__).parent / "fixtures" / "iw_list_example_wifi7_be.txt"
+
+
+def test_wifi7_radios_are_detected_and_matched():
+    hardware = parse_iw_list(WIFI7.read_text())
+    by_band = {h.band: h for h in hardware}
+    assert all(h.eht for h in hardware)
+    assert by_band[RadioBand.SIX_G].eht320 and not by_band[RadioBand.FIVE_G].eht320
+    facts = sorted((f.band, f.nss, f.max_width) for f in map(radio_facts, hardware))
+    assert facts == [("2g", 2, 40), ("5g", 2, 160), ("6g", 2, 320)]
+    assert generation(hardware) == 7
+    match = best_model(7, list(map(radio_facts, hardware)))
+    assert match.exact and match.model.startswith("EAP7")
+
+
+def test_eht_lines_do_not_leak_into_the_he_block():
+    # The Wi-Fi 6 lab AP has no EHT block: still Wi-Fi 6, no 320 MHz.
+    hardware = parse_iw_list(FIXTURE.read_text())
+    assert not any(h.eht or h.eht320 for h in hardware)
