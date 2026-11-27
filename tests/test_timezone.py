@@ -178,3 +178,45 @@ def test_negotiation_applies_the_time_zone_and_never_raises(caplog):
     services.configuration.execute = crash
     adoption._apply_site_time_zone(_body(1050), services=services)  # logged, not raised
     adoption._apply_site_time_zone({}, services=services)  # nothing to apply
+
+
+def test_out_of_range_dst_is_ignored_not_raised():
+    from open_omada_device_agent.contexts.device.domain import DaylightSaving
+
+    huge = {"enable": 1, "start": 10**20, "end": 10**20, "offset": 3600}
+    setting = parse_time_zone(_body(720, huge))
+    assert setting.daylight_saving == DaylightSaving()
+    # A live SET with it applies the standard offset and does not crash.
+    runner = _Runner()
+    result = OpenWrtTimeZoneAdapter(runner=runner).reconcile(parse_config_body(_body(720, huge)), _caps())
+    assert result.applied and "timezone='UTC0'" in runner.batch
+    # Even if such values reach the rules directly, they are dropped.
+    assert posix_time_zone(0, DaylightSaving(True, 10**20, 10**20, 3600)) == "UTC0"
+    assert parse_time_zone(_body(720, {"enable": 1, "start": -5, "end": 1, "offset": 3600})).daylight_saving \
+        == DaylightSaving()
+
+
+def test_southern_and_half_hour_zones_parse_end_to_end():
+    # Sydney 2027/28: DST starts 2027-10-03 02:00 AEST, ends 2028-04-02 03:00 AEDT.
+    sydney = {"enable": 1, "start": 1822492800, "end": 1838217600, "offset": 3600}
+    setting = parse_time_zone(_body(720 + 600, sydney))
+    assert posix_time_zone(600, setting.daylight_saving) == "<+10>-10<+11>-11,M10.1.0,M4.1.0/3"
+    # Adelaide (UTC+9:30): same Sunday rules, half-hour names.
+    adelaide = {"enable": 1, "start": 1822494600, "end": 1838219400, "offset": 3600}
+    setting = parse_time_zone(_body(720 + 570, adelaide))
+    assert posix_time_zone(570, setting.daylight_saving) == "<+0930>-9:30<+1030>-10:30,M10.1.0,M4.1.0/3"
+
+
+def test_missing_dst_keeps_the_rules_on_the_device():
+    london = "<+00>0<+01>-1,M3.5.0/1,M10.5.0"
+    setting = parse_time_zone(_body(720))
+    assert setting.daylight_saving is None
+
+    runner = _Runner(timezone=london, zonename=None)
+    result = OpenWrtTimeZoneAdapter(runner=runner).reconcile(parse_config_body(_body(720)), _caps())
+    assert result.applied and not result.changed and runner.batch is None
+
+    # A different standard offset still replaces the zone.
+    runner = _Runner(timezone=london, zonename=None)
+    OpenWrtTimeZoneAdapter(runner=runner).reconcile(parse_config_body(_body(1050)), _caps())
+    assert "timezone='<+0530>-5:30'" in runner.batch

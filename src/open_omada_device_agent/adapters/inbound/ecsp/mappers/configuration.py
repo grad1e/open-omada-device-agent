@@ -237,6 +237,11 @@ def _parse_lan_setting(raw: Any) -> LanIpSetting | None:
     )
 
 
+# Unix times up to 2106 and a daylight-saving shift of at most 2 hours.
+MAX_DST_TIME = 2**32 - 1
+MAX_DST_OFFSET = 7200
+
+
 def parse_time_zone(body: Mapping[str, Any]) -> TimeZoneSetting | None:
     """``timeSetting.timeZone`` (offset + 720) and ``dst``; None if unusable."""
     raw = body.get("timeSetting")
@@ -251,19 +256,27 @@ def parse_time_zone(body: Mapping[str, Any]) -> TimeZoneSetting | None:
     offset = code - TIME_ZONE_BASE
     if not MIN_UTC_OFFSET_MINUTES <= offset <= MAX_UTC_OFFSET_MINUTES or offset % 15:
         return None
-    dst = body.get("dst")
-    daylight_saving = DaylightSaving()
-    if isinstance(dst, Mapping):
-        try:
-            daylight_saving = DaylightSaving(
-                enabled=bool(_optional_bool(dst.get("enable"))),
-                start=_optional_int(dst.get("start")) or 0,
-                end=_optional_int(dst.get("end")) or 0,
-                offset=_optional_int(dst.get("offset")) or 0,
-            )
-        except (TypeError, ValueError):
-            daylight_saving = DaylightSaving()
-    return TimeZoneSetting(utc_offset_minutes=offset, daylight_saving=daylight_saving)
+    return TimeZoneSetting(utc_offset_minutes=offset, daylight_saving=_parse_dst(body.get("dst")))
+
+
+def _parse_dst(raw: Any) -> DaylightSaving | None:
+    """``dst``; None if absent, off (all zero) if malformed or out of range."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        return DaylightSaving()
+    try:
+        dst = DaylightSaving(
+            enabled=bool(_optional_bool(raw.get("enable"))),
+            start=_optional_int(raw.get("start")) or 0,
+            end=_optional_int(raw.get("end")) or 0,
+            offset=_optional_int(raw.get("offset")) or 0,
+        )
+    except (TypeError, ValueError):
+        return DaylightSaving()
+    if not (0 <= dst.start <= MAX_DST_TIME and 0 <= dst.end <= MAX_DST_TIME and 0 <= dst.offset <= MAX_DST_OFFSET):
+        return DaylightSaving()
+    return dst
 
 
 def _parse_lldp(raw: Any) -> LldpConfig | None:
