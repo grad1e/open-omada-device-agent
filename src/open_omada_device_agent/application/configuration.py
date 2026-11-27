@@ -33,8 +33,10 @@ class ApplyDeviceConfiguration:
         self._allow_ack_only_config = allow_ack_only_config
 
     def execute(self, update: ApplyDeviceConfigurationCommand) -> ApplyConfigurationResult:
-        if update.unhandled_keys:
-            return ApplyConfigurationResult(False, error=f"unsupported keys: {','.join(update.unhandled_keys)}")
+        # Unsupported keys still fail the SET, but only after the supported
+        # domains in the same SET are applied: one unknown key must not leave
+        # SSID or radio changes behind.
+        unsupported = f"unsupported keys: {','.join(update.unhandled_keys)}" if update.unhandled_keys else ""
         if update.passive_keys:
             log.info(
                 "Preserving passive AP config domains without local OpenWrt changes: %s",
@@ -49,18 +51,21 @@ class ApplyDeviceConfiguration:
         for port in ports:
             result = port.reconcile(update, capabilities)
             if not result.applied:
-                return ApplyConfigurationResult(False, changed, result.error)
+                return ApplyConfigurationResult(False, changed, "; ".join(filter(None, (result.error, unsupported))))
             changed = changed or result.changed
             if result.error:
                 soft_errors.append(result.error)
+        errors = list(soft_errors)
         if update.ack_only_keys:
             keys = ",".join(update.ack_only_keys)
-            if not self._allow_ack_only_config:
-                message = f"ack-only control-plane keys require OMADA_LAB_ACK_CONTROL_PLANE_CONFIG=true: {keys}"
-                if changed:
-                    message = f"{message}; supported domains were applied first"
-                return ApplyConfigurationResult(False, changed, "; ".join((*soft_errors, message)))
-            log.warning("Acknowledging controller-side AP config without local OpenWrt changes: %s", keys)
-        if soft_errors:
-            return ApplyConfigurationResult(False, changed, "; ".join(soft_errors))
+            if self._allow_ack_only_config:
+                log.warning("Acknowledging controller-side AP config without local OpenWrt changes: %s", keys)
+            else:
+                errors.append(f"ack-only control-plane keys require OMADA_LAB_ACK_CONTROL_PLANE_CONFIG=true: {keys}")
+        if unsupported:
+            errors.append(unsupported)
+        if errors:
+            if changed and len(errors) > len(soft_errors):
+                errors.append("supported domains were applied first")
+            return ApplyConfigurationResult(False, changed, "; ".join(errors))
         return ApplyConfigurationResult(True, changed)

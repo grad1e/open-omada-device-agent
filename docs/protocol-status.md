@@ -23,7 +23,7 @@ see the [configuration reference](configuration.md#device-identity)).
 | Periodic device informs | ✅ Working; telemetry in the formats Controller 6.3 parses |
 | Device IP shown in the controller | ✅ `OMADA_DEVICE_IP=local` reports the address used to reach the controller (IPv4 or IPv6) |
 | Radio capability advertisement | ✅ From `iw list`: channels, widths up to 160 MHz, antennas, wireless modes; DFS channels when the regulatory domain supports radar detection |
-| `SET_REQUEST` acknowledgement | 🟡 Partial; rejects unsupported keys |
+| `SET_REQUEST` acknowledgement | 🟡 Partial; applies the supported keys, then reports unsupported ones as an error |
 | Max clients, RSSI threshold, U-APSD | 🟡 Per radio from Wireless → Advanced; OFDMA is always on (checkbox hidden; OpenWrt has no switch for it) |
 | Network Check (Tools) | 🟡 Ping, Traceroute, DNS Lookup and ARP Table run on the AP with BusyBox; output streams into the controller's Device Output |
 | IP Settings (opt-in) | 🟡 DHCP (with fallback address) or static LAN address, gateway and DNS, with automatic rollback if the controller becomes unreachable; enable with `OMADA_CAP_IP_SETTINGS=true` |
@@ -69,7 +69,7 @@ identifiers.
 | System negotiation | ✅ | Config/version metadata consumed |
 | Initial sync result | ✅ | ACK validated |
 | Inform | 🟡 | `upTime` as `"<days> days HH:MM:SS"` and `lanInfo.rate` as an integer string (Validated: lab, no controller errors); clients without `rssi` are left out until hostapd reports one. Device, wired LAN, active hostapd clients enriched with DHCP/openNDS metadata, portal auth clients, hostapd station metrics, OpenWrt `wSettings_*`, `ssidStats_*`, and aggregate `radioTraffic_*` when `ubus` is available |
-| SET | 🟡 | Envelope/version ACKs plus parsed AP domains; one-off commands without a version (`rogueApScan`) keep the current version; unsupported keys return local error instead of fake success; common controller defaults such as `ssh`, `lldp`, `ipGroup`, `ipv6Group`, `lanSetting`, `logSetting`, and scheduler/mac-filter globals are accepted as passive when they do not require OpenWrt changes |
+| SET | 🟡 | Envelope/version ACKs plus parsed AP domains; one-off commands without a version (`rogueApScan`) keep the current version; unsupported keys return local error instead of fake success, after the supported keys in the same SET are applied (Validated: a SET with `macFilterAssoc` and an SSID change used to leave the SSID unchanged); common controller defaults such as `ssh`, `lldp`, `ipGroup`, `ipv6Group`, `lanSetting`, `logSetting`, and scheduler/mac-filter globals are accepted as passive when they do not require OpenWrt changes |
 | WLAN/radio config | 🟡 | OpenWrt UCI adapter for basic radios and PSK SSIDs. `chanWidth` enum codes map to `htmode` (Observed: 2=20, 3=40, 4=20/40, 5=80, 6=20/40/80, 7=160 MHz); Auto channel uses ACS limited to `channelRange` and usable channels; `OMADA_WIFI_COUNTRY` sets the country (the controller sends none); `wirelessMode` codes (3 b/g, 4 b/g/n, 13 b/g/n/ax, 7 a/n, 10 a/n/ac, 16 a/n/ac/ax; Auto = key absent) select the htmode family, capped at the hardware (Validated: lab, b/g → `NOHT`/`hw_mode=g`, a/n/ac → `VHT80`, Auto → `HE`) |
 | SSID VLAN config | 🟡 | Opt-in UCI network interface mapping; dynamic VLAN/Option82 remain rejected unless implemented |
 | Management VLAN config | 🟡 | Opt-in UCI device remapping via explicit local target variables |

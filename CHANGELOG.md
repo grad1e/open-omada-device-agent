@@ -146,6 +146,11 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- A SET with an unsupported key no longer drops the supported changes in the
+  same SET. Example: removing a MAC filter also sends `macFilterAssoc`, so
+  the SSID change in that SET (such as turning client isolation off) was
+  skipped until the next full sync. The agent now applies the supported
+  keys and still reports the SET as failed, naming the unsupported keys.
 - A full config sync no longer fails on an AP without a portal SSID. Every
   full sync carries `portalFreePolicyConfig`; when openNDS's gateway is the
   AP's uplink, the agent now skips openNDS (and logs why) instead of
