@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from ....application.contracts import PlatformCapabilities
 from ....contexts.wireless.domain import RadioBand
-from .opennds import default_route_device, uplink_capture_message
+from .opennds import uplink_capture_message, uplink_device
 from .uci import CommandRunner, SubprocessRunner, usable_channels
 
 
@@ -54,9 +54,11 @@ class OpenWrtStartupBootstrap:
         *,
         config: OpenWrtBootstrapConfig | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        controller_host: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._runner = runner or SubprocessRunner()
         self._config = config or OpenWrtBootstrapConfig()
+        self._controller_host = controller_host
         self._sleep = sleep
 
     def apply(self, capabilities: PlatformCapabilities) -> OpenWrtBootstrapResult:
@@ -296,11 +298,11 @@ class OpenWrtStartupBootstrap:
 
     def _ensure_opennds(self) -> OpenWrtBootstrapResult:
         interface = self._config.opennds_interface or self._config.lan_bridge
-        uplink = default_route_device(self._runner)
+        uplink = uplink_device(self._runner, self._controller_host())
         if uplink is None or interface == uplink:
             # A dumb AP without a guest network: leave openNDS off. Without a
-            # default route (DHCP still waiting, link down) the uplink is
-            # unknown, so openNDS stays off too. The portal runtime reports
+            # default route or a route to a known controller (DHCP still
+            # waiting, link down) the uplink is unknown, so openNDS stays off too. The portal runtime reports
             # this if the controller ever sends a portal SSID.
             log.debug("openNDS not started: %s", uplink_capture_message(interface, uplink))
             return OpenWrtBootstrapResult(applied=True)

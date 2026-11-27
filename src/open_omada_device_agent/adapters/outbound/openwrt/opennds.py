@@ -6,7 +6,7 @@ import re
 import ipaddress
 import html
 import shlex
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -64,11 +64,33 @@ def default_route_device(runner: CommandRunner) -> str | None:
     return match.group(1) if match else None
 
 
+def uplink_device(runner: CommandRunner, controller_host: str | None = None) -> str | None:
+    """The AP's uplink: the default route's device or, without a default route
+    (an AP on a network with no internet), the device of the route to the
+    controller. None if neither is known."""
+    device = default_route_device(runner)
+    if device is not None or not controller_host:
+        return device
+    try:
+        address = str(ipaddress.ip_address(controller_host))
+    except ValueError:
+        return None  # a host name; no DNS lookup for this
+    try:
+        result = runner.run(["ip", "-4", "route", "get", address])
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    match = re.search(r"\bdev\s+(\S+)", result.stdout or "")
+    return match.group(1) if match else None
+
+
 def uplink_capture_message(interface: str, uplink: str | None = None) -> str:
     if uplink is None:
         return (
-            f"openNDS not started on {interface}: the AP has no default route yet, "
-            "so it cannot tell whether that interface is its uplink. Portal SSIDs "
+            f"openNDS not started on {interface}: the AP has no default route and "
+            "no route to a known controller address yet, so it cannot tell whether "
+            "that interface is its uplink. Portal SSIDs "
             "need a routed guest network (OMADA_PORTAL_NETWORK, "
             "OMADA_OPENNDS_INTERFACE); the agent retries when the controller "
             "sends the portal again."
@@ -82,12 +104,21 @@ def uplink_capture_message(interface: str, uplink: str | None = None) -> str:
 
 
 class OpenNdsPortalAdapter:
-    def __init__(self, runner: CommandRunner | None = None) -> None:
+    def __init__(
+        self,
+        runner: CommandRunner | None = None,
+        *,
+        controller_host: Callable[[], str | None] = lambda: None,
+    ) -> None:
         self._runner = runner or SubprocessRunner()
+        self._controller_host = controller_host
+
+    def _uplink(self) -> str | None:
+        return uplink_device(self._runner, self._controller_host())
 
     def apply(self, policy: OpenNdsPortalPolicy) -> OpenNdsPortalResult:
         interface = self._gateway_interface()
-        uplink = default_route_device(self._runner)
+        uplink = self._uplink()
         if interface and (uplink is None or interface == uplink):
             return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface, uplink))
         delete_commands = [
@@ -184,8 +215,9 @@ class OpenNdsPortalAdapter:
         if status.returncode == 0:
             return OpenNdsPortalResult(applied=True, changed=False)
         interface = self._gateway_interface()
-        if interface and interface == default_route_device(self._runner):
-            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface))
+        uplink = self._uplink()
+        if interface and (uplink is None or interface == uplink):
+            return OpenNdsPortalResult(applied=False, error=uplink_capture_message(interface, uplink))
         result = self._runner.run(["/etc/init.d/opennds", "restart"])
         if result.returncode != 0:
             return OpenNdsPortalResult(

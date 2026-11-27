@@ -458,3 +458,25 @@ def test_bootstrap_leaves_opennds_off_without_a_default_route():
 
     assert _batch_payloads(runner) == []
     assert (("/etc/init.d/opennds", "restart"), None) not in runner.calls
+
+
+def test_bootstrap_uses_the_route_to_the_controller_without_a_default_route():
+    # An AP on a network with no internet, with a routed guest bridge.
+    runner = BootstrapRunner(
+        responses={
+            ("uci", "-q", "get", "opennds.@opennds[0]"): CommandResult(
+                returncode=0, stdout="opennds\n"
+            ),
+            ("ip", "-4", "route", "show", "default"): CommandResult(returncode=0, stdout=""),
+            ("ip", "-4", "route", "get", "192.0.2.10"): CommandResult(
+                returncode=0, stdout="192.0.2.10 dev br-lan src 192.0.2.20 uid 0\n"
+            ),
+        }
+    )
+    OpenWrtStartupBootstrap(
+        runner,
+        config=OpenWrtBootstrapConfig(ensure_lan=False, opennds_interface="br-guest"),
+        controller_host=lambda: "192.0.2.10",
+    ).apply(_caps(has_opennds=True))
+
+    assert "set opennds.@opennds[0].gatewayinterface='br-guest'" in _batch_payloads(runner)[0]

@@ -493,3 +493,48 @@ def test_controller_portal_redirect_uses_the_controller_query_names():
     for name in ("cid", "ap", "ssid", "rid", "t", "u", "clientIp"):
         assert f'_openomada_append_param "{name}" ' in themespec
     assert '_openomada_append_param "apMac"' not in themespec
+
+
+@dataclass
+class _NoDefaultRouteRunner(_UplinkRunner):
+    controller_route: str = "192.0.2.10 dev br-lan src 192.0.2.20 uid 0\n"
+
+    def run(self, args, *, input_text=None):
+        if tuple(args[:4]) == ("ip", "-4", "route", "get"):
+            self.calls.append(tuple(args))
+            return CommandResult(returncode=0, stdout=self.controller_route)
+        return super().run(args, input_text=input_text)
+
+
+def test_without_a_default_route_the_route_to_the_controller_is_the_uplink():
+    # An AP on a network with no internet: the guest bridge may still run openNDS.
+    policy = opennds_portal_policy_from_free_policy(PortalFreePolicy())
+    runner = _NoDefaultRouteRunner("br-guest", [], default_route="")
+    result = OpenNdsPortalAdapter(runner, controller_host=lambda: "192.0.2.10").apply(policy)
+    assert result.applied is True
+    assert ("ip", "-4", "route", "get", "192.0.2.10") in runner.calls
+
+    # The controller is reached over the portal interface: never capture it.
+    runner = _NoDefaultRouteRunner("br-lan", [], default_route="")
+    result = OpenNdsPortalAdapter(runner, controller_host=lambda: "192.0.2.10").apply(policy)
+    assert result.applied is False and "carries the default route" in result.error
+    assert ("/etc/init.d/opennds", "restart") not in runner.calls
+
+    # A controller host name is not looked up.
+    runner = _NoDefaultRouteRunner("br-guest", [], default_route="")
+    assert OpenNdsPortalAdapter(runner, controller_host=lambda: "omada.example").apply(policy).applied is False
+
+
+def test_ensure_running_waits_for_a_known_uplink():
+    runner = _UplinkRunner("br-guest", [], default_route="")
+    runner_status = runner.run
+
+    def run(args, *, input_text=None):
+        if tuple(args) == ("ndsctl", "status"):
+            return CommandResult(returncode=1)
+        return runner_status(args, input_text=input_text)
+
+    runner.run = run
+    result = OpenNdsPortalAdapter(runner).ensure_running()
+    assert result.applied is False and "no default route" in result.error
+    assert ("/etc/init.d/opennds", "restart") not in runner.calls

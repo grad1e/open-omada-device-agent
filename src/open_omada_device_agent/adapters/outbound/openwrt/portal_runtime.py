@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,12 +29,17 @@ class OpenWrtPortalRuntime:
         *,
         interface: str | None = None,
         redirect_port: int | None = None,
+        controller_host: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._runner = runner
+        self._controller_host = controller_host
         self._interface = config.PORTAL_INTERFACE if interface is None else interface
         self._redirect_port = (
             config.PORTAL_REDIRECT_PORT if redirect_port is None else redirect_port
         )
+
+    def _opennds(self) -> OpenNdsPortalAdapter:
+        return OpenNdsPortalAdapter(self._runner, controller_host=self._controller_host)
 
     def reconcile(
         self,
@@ -55,11 +60,11 @@ class OpenWrtPortalRuntime:
             )
         if capabilities.has_opennds:
             if not needs_opennds_policy:
-                started = OpenNdsPortalAdapter(self._runner).ensure_running()
+                started = self._opennds().ensure_running()
                 if not started.applied:
                     return PortalRuntimeResult(applied=False, error=started.error)
                 return PortalRuntimeResult(applied=True, changed=started.changed)
-            result = OpenNdsPortalAdapter(self._runner).apply(
+            result = self._opennds().apply(
                 opennds_portal_policy_from_omada_config(
                     free_policy=update.portal_free_policy,
                     portal_configs=update.portal_configs,
