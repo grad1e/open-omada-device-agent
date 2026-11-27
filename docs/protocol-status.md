@@ -113,6 +113,8 @@ Known gaps that are deliberately not being worked on now, and why.
 | Switch and other device profiles | The agent reports itself as an AP in several places (`device: "ap"`). A device-neutral refactor is the groundwork for switch profiles; it changes nothing visible for an AP. | A concrete switch target to test against (est. one day for the refactor). |
 | 160 MHz and DFS under country IN | wireless-regdb gives India `DFS-UNSET`, so hostapd cannot do radar detection and disables the radio; DFS channels and 160 MHz stay hidden (Validated: lab AP, OpenWrt 25.12). Patching the local regulatory database was declined. | A DFS region for IN in upstream wireless-regdb. |
 | Periodic rogue AP scan | Controller 6.3.0.111 stores an unsolicited `rogueApList` as rogue APs only on cloud-based controllers; software and hardware controllers ignore it (Observed). Scanning also costs off-channel time. | A local controller that shows the results. |
+| SSID item `ssidCondCtrl` | Every SSID item carries `ssidCondCtrl` {`ssidCtrlEnable`} (Observed: always `false` in the lab). Which controller setting turns it on, and what it does on an EAP, is Unknown; the agent ignores it. | Find the setting that sends `ssidCtrlEnable` `true` on the lab controller and note what changes in the SET (est. 30 min research), then decide whether OpenWrt has an equivalent. |
+| SSID item `prohibitWifiShare` | Every SSID item carries `prohibitWifiShare` (Observed: always `false`). The name suggests blocking Wi-Fi sharing apps, which OpenWrt has no switch for; its meaning is Unknown and the agent ignores it. | Find the setting that turns it on and what a real EAP does with it (est. 30 min research). |
 
 ## Waiting for a real EAP or switch
 
@@ -126,6 +128,8 @@ These need a real Omada EAP or switch, or a second AP, next to the agent; the la
 | MAC filter on a real client | Put a phone's MAC in a group on a Deny List: is the phone dropped and refused? Then switch to an Allow List with only that phone: does it connect while other devices are refused? (est. 10 min) |
 | 802.11r roaming | With two OpenWrt APs, then an OpenWrt AP and a real EAP, on one 802.11r SSID: does a client roam with FT authentication (`logread` shows `FT`) rather than a full handshake, for both WPA2-PSK and WPA2-PSK/WPA3-SAE? A full handshake between the EAP and the agent means the EAP's key holders differ from ours. Also check plain WPA-PSK and PMF Mandatory. Then, with Load Balance on, walk away from one AP and stand next to the other: does the phone move by itself, or stay on the far AP until the signal drops out? Staying means a steering daemon (`usteer`, see Parked work) is needed (est. 40 min) |
 | LLDP neighbours | With the AP cabled to an Omada switch: do the switch's chassis ID, port and capabilities show for the AP in the controller, do they clear after LLDP Off, and which chassis ID does the switch see for the AP? (est. 10 min) |
+| WLAN schedule while the controller is down | Link a time range to an SSID on a real EAP, stop the controller, and cross a range edge: does the EAP still turn the SSID off or on? The agent checks the schedule only while connected (est. 20 min) |
+| 802.11 Rate Control on the air | With a Wi-Fi sniffer (monitor mode), check that beacons and data stay at or above the minimum rate, that "Send Beacons at 1 Mbps" sends beacons at 1 Mbps, and compare the basic rates with a real EAP using the same settings; the agent's mapping of "require clients" and the management rate to basic rates is Inferred (est. 30 min) |
 
 ## Capability policy
 
