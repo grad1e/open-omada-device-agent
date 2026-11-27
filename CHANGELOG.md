@@ -174,6 +174,13 @@ All notable project changes will be documented in this file.
 
 ### Fixed
 
+- On boards with two 5 GHz radios, startup checked the second radio's Auto
+  channel list against the first radio's channels, so a high-band radio's
+  list could be replaced with low-band channels it cannot use. Each 5 GHz
+  radio is now checked against its own phy (the second `5g` radio by name
+  is 5 GHz-2, as for its settings); without a second 5 GHz phy in
+  `iw list` it is left alone. Inferred: unit tests only, no tri-band board
+  tested.
 - The nftables portal fallback (without openNDS) and client rate limits
   deleted their table before loading the new one, so clients were briefly
   unfiltered and a failed load left no rules. Both now swap the table in

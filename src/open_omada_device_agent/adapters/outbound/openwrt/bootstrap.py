@@ -8,9 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ....application.contracts import PlatformCapabilities
-from ....contexts.wireless.domain import RadioBand
 from .opennds import uplink_capture_message, uplink_device
-from .uci import CommandRunner, SubprocessRunner, uci_quote, usable_channels
+from .uci import CommandRunner, SubprocessRunner, assign_radio_bands, uci_quote, usable_channels
 
 
 log = logging.getLogger("open_omada.openwrt.bootstrap")
@@ -180,12 +179,22 @@ class OpenWrtStartupBootstrap:
             return OpenWrtBootstrapResult(applied=True)
         lines: list[str] = []
         pruned: list[str] = []
-        for radio in self._sections_of_type("wireless", "wifi-device"):
-            current = self._uci_get(f"wireless.{radio}.channels").split()
-            try:
-                band = RadioBand(self._uci_get(f"wireless.{radio}.band"))
-            except ValueError:
+        sections = self._sections_of_type("wireless", "wifi-device")
+        # Same band rule as the settings side: a second 5g radio (by name) is
+        # 5 GHz-2, checked against the second 5 GHz phy from ``iw list``, not
+        # the first one's channels (Inferred: UCI name order follows phy
+        # order; no tri-band board tested). Without that phy it is skipped.
+        bands = {
+            name: band
+            for band, name in assign_radio_bands(
+                {radio: self._uci_get(f"wireless.{radio}.band") for radio in sections}
+            ).items()
+        }
+        for radio in sections:
+            band = bands.get(radio)
+            if band is None:
                 continue
+            current = self._uci_get(f"wireless.{radio}.channels").split()
             usable = usable_channels(capabilities, band)
             if not current or not usable:
                 continue
