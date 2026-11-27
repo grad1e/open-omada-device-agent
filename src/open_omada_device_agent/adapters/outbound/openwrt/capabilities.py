@@ -49,6 +49,15 @@ def detect_platform_capabilities(
     # SAE and 802.11r; Validated on wpad-basic-mbedtls 2025.08.26).
     hostapd_sae = wlan_possible and has_hostapd and succeeds(("hostapd", "-vsae"))
     hostapd_11r = wlan_possible and has_hostapd and succeeds(("hostapd", "-v11r"))
+    # hostapd has no -v feature name for 802.11k/v. RRM (802.11k) is always
+    # built in (Validated: wpad-basic-mbedtls accepts ieee80211k). 802.11v
+    # needs CONFIG_WNM_AP, which wpad-basic lacks: hostapd then refuses
+    # bss_transition and the radio stays down (Observed). Its config key
+    # wnm_sleep_mode is only in WNM_AP builds (Inferred: absent from
+    # wpad-basic-mbedtls 2025.08.26).
+    hostapd_11k = wlan_possible and has_hostapd
+    hostapd_path = which("hostapd") if hostapd_11k else None
+    hostapd_11v = bool(hostapd_path) and succeeds(("grep", "-q", "wnm_sleep_mode", str(hostapd_path)))
     iw_output = _iw_list_output(
         openwrt=openwrt,
         command_exists=which,
@@ -82,6 +91,8 @@ def detect_platform_capabilities(
         supports_wpa2_psk=_feature(values, "OMADA_CAP_WPA2_PSK", wlan_possible),
         supports_wpa3_psk=_feature(values, "OMADA_CAP_WPA3_PSK", hostapd_sae),
         supports_80211r=_feature(values, "OMADA_CAP_80211R", hostapd_11r),
+        supports_80211k=_feature(values, "OMADA_CAP_80211K", hostapd_11k),
+        supports_80211v=_feature(values, "OMADA_CAP_80211V", hostapd_11v),
         supports_wpa_enterprise=_feature(values, "OMADA_CAP_WPA_ENTERPRISE", False),
         supports_radius=_feature(values, "OMADA_CAP_RADIUS", False),
         supports_ssid_vlan=_feature(values, "OMADA_CAP_SSID_VLAN", False),
@@ -142,6 +153,8 @@ def capability_summary(capabilities: PlatformCapabilities) -> str:
         "supports_wpa2_psk",
         "supports_wpa3_psk",
         "supports_80211r",
+        "supports_80211k",
+        "supports_80211v",
         "supports_wpa_enterprise",
         "supports_radius",
         "supports_ssid_vlan",
