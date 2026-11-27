@@ -985,6 +985,9 @@ def _psk_errors(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> li
         errors.append("WPA3-PSK WLAN requested but WPA3-PSK capability is disabled")
     elif version != PSK_VERSION_WPA3 and not capabilities.supports_wpa2_psk:
         errors.append("PSK WLAN requested but WPA2-PSK capability is disabled")
+    key_error = _psk_key_error(security.psk_key.reveal() if security.psk_key is not None else "")
+    if key_error:
+        errors.append(f"SSID {wlan.name!r}: {key_error}")
     if security.psk_cipher is not None and security.psk_cipher not in PSK_CIPHER_SUFFIX:
         errors.append(f"unsupported WPA cipher code {security.psk_cipher}")
     if security.pmf_mode is not None and security.pmf_mode not in PMF_IEEE80211W:
@@ -1000,6 +1003,27 @@ def _psk_errors(wlan: WirelessNetwork, capabilities: PlatformCapabilities) -> li
         if key and (len(key) not in (32, 64) or not _HEX.match(key)):
             errors.append("802.11r key from the controller is not 32 or 64 hex digits")
     return errors
+
+
+def _psk_key_error(key: str) -> str | None:
+    """Why OpenWrt would reject this Wi-Fi key, or None. Never echoes the key.
+
+    OpenWrt takes 8-63 bytes as a passphrase and 64 characters as a raw PSK;
+    anything else fails the interface with INVALID_WPA_PSK (Observed: OpenWrt
+    25.12 ``/usr/share/ucode/wifi/ap.uc`` and ``/lib/netifd/hostapd.sh``).
+    hostapd reads a raw PSK as hex, and its config is one setting per line, so
+    control characters are refused too.
+    """
+    if not key:
+        return None
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in key):
+        return "Wi-Fi key contains a control character"
+    size = len(key.encode("utf-8"))
+    if size == 64:
+        return None if _HEX.match(key) else "a 64-character Wi-Fi key must be hex digits"
+    if not 8 <= size <= 63:
+        return f"Wi-Fi key must be 8 to 63 characters (or 64 hex digits), got {size} bytes"
+    return None
 
 
 def _psk_encryption(security: WirelessSecurity) -> str:
