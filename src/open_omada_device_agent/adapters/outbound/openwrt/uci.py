@@ -173,13 +173,18 @@ class OpenWrtUciAdapter:
                 "(usteer) moves clients",
                 "/v" if capabilities.supports_80211v else "",
             )
+        wireless_state = self._wireless_state(update)
+        radios = radio_sections_by_band(wireless_state)
+        missing = _missing_radio_errors(update, capabilities, radios)
+        if missing:
+            return ReconciliationResult(applied=False, changed=False, error="; ".join(missing))
         batch = build_uci_batch(
             update,
             capabilities,
             management_vlan_interface=self._management_vlan_interface,
             management_vlan_device=self._management_vlan_device,
-            current_htmodes=self._current_htmodes(update),
-            wireless_state=self._wireless_state(update),
+            current_htmodes=self._current_htmodes(update, radios),
+            wireless_state=wireless_state,
             portal_network=self._portal_network,
             mac_filter=mac_filter,
             mac_filter_changed=update.mac_filter is not None,
@@ -273,8 +278,8 @@ class OpenWrtUciAdapter:
             log.warning("Could not save wireless state to %s: %s", self._state_file, exc)
 
     def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
-        """Read ``wireless`` sections when Advanced radio settings are involved."""
-        if not (update.radio_advanced or update.wlans or update.wlan_bands or update.mac_filter or update.schedule):
+        """Read ``wireless`` sections when radios or SSIDs are involved."""
+        if not (update.radios or update.radio_advanced or update.wlans or update.wlan_bands or update.mac_filter or update.schedule):
             return {}
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
@@ -285,13 +290,17 @@ class OpenWrtUciAdapter:
             return {}
         return parse_uci_show(result.stdout)
 
-    def _current_htmodes(self, update: ApplyDeviceConfigurationCommand) -> dict[str, str]:
+    def _current_htmodes(
+        self,
+        update: ApplyDeviceConfigurationCommand,
+        radios: Mapping[RadioBand, str],
+    ) -> dict[str, str]:
         """Read the current UCI htmode of radios whose channel width will change."""
         htmodes: dict[str, str] = {}
         for radio in update.radios:
             if radio.channel_width is None and radio.wireless_mode is None:
                 continue
-            section = _radio_section(radio.band, radio.radio_id)
+            section = _radio_section(radio.band, radio.radio_id, radios)
             result = self._runner.run(["uci", "-q", "get", f"wireless.{section}.htmode"])
             if result.returncode == 0 and result.stdout.strip():
                 htmodes[section] = result.stdout.strip()
@@ -395,6 +404,7 @@ def build_uci_batch(
     now = now or datetime.now()
     current_htmodes = current_htmodes or {}
     wireless_state = wireless_state or {}
+    radios = radio_sections_by_band(wireless_state)
     network_lines: list[str] = []
     active_wlans = _active_wlans(update, capabilities)
     omitted_wlans = tuple(update.wlans[len(active_wlans):])
@@ -419,25 +429,26 @@ def build_uci_batch(
         lines.extend(network_lines)
         lines.append("commit network")
     for radio in update.radios:
-        section = _radio_section(radio.band, radio.radio_id)
+        section = _radio_section(radio.band, radio.radio_id, radios)
         lines.extend(
             _radio_lines(
                 radio,
+                section,
                 current_htmodes.get(section),
                 advertised_channels=usable_channels(capabilities, radio.band),
                 hardware=capabilities.hardware_for(radio.band),
             )
         )
     for band in update.wlan_bands:
-        lines.extend(_rate_control_lines(band, active_wlans, wireless_state))
+        lines.extend(_rate_control_lines(band, active_wlans, wireless_state, radios))
     radio_uapsd = _radio_uapsd(wireless_state)
     rebuilt = {_wlan_section(wlan) for wlan in active_wlans}
     for advanced in update.radio_advanced:
-        section = _radio_section(advanced.band, advanced.radio_id)
+        section = _radio_section(advanced.band, advanced.radio_id, radios)
         if advanced.uapsd is not None:
             radio_uapsd[section] = advanced.uapsd
         lines.extend(_radio_advanced_lines(advanced, section, wireless_state, skip=rebuilt))
-    for section in _default_sections(active_wlans):
+    for section in _default_sections(active_wlans, radios):
         lines.append(_set("wireless", section, "disabled", "1"))
     for wlan in omitted_wlans:
         lines.append(f"delete wireless.{_wlan_section(wlan)}")
@@ -460,14 +471,14 @@ def build_uci_batch(
             off = schedule.ssid_off(ssid_id, band, now)
             lines.extend(_schedule_lines(section, wireless_state[section], off))
     for wlan in active_wlans:
-        lines.extend(_wlan_lines(wlan, capabilities, portal_network))
+        lines.extend(_wlan_lines(wlan, capabilities, portal_network, radios))
         band_index = MAC_FILTER_BANDS.get(wlan.band)
         if band_index is not None:
             policy = mac_filter.policy(wlan.ssid_id, band_index)
             lines.extend(_mac_filter_lines(_wlan_section(wlan), policy, reset=False))
             if schedule.ssid_off(wlan.ssid_id, band_index, now):
                 lines.extend(_schedule_lines(_wlan_section(wlan), {}, True))
-        uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id))
+        uapsd = radio_uapsd.get(_radio_section(wlan.band, wlan.radio_id, radios))
         if uapsd is not None:
             lines.append(_set("wireless", _wlan_section(wlan), "uapsd", "1" if uapsd else "0"))
     if lines:
@@ -704,10 +715,13 @@ def _active_wlans(
     return tuple(update.wlans[: max(0, capabilities.max_ssids)])
 
 
-def _default_sections(wlans: tuple[WirelessNetwork, ...]) -> tuple[str, ...]:
+def _default_sections(
+    wlans: tuple[WirelessNetwork, ...],
+    radios: Mapping[RadioBand, str],
+) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
-            f"default_{_radio_section(wlan.band, wlan.radio_id)}"
+            f"default_{_radio_section(wlan.band, wlan.radio_id, radios)}"
             for wlan in wlans
         )
     )
@@ -715,12 +729,12 @@ def _default_sections(wlans: tuple[WirelessNetwork, ...]) -> tuple[str, ...]:
 
 def _radio_lines(
     radio: RadioConfig,
+    section: str,
     current_htmode: str | None = None,
     *,
     advertised_channels: tuple[int, ...] = (),
     hardware: RadioHardware | None = None,
 ) -> tuple[str, ...]:
-    section = _radio_section(radio.band, radio.radio_id)
     lines = []
     if radio.enabled is not None:
         lines.append(_set("wireless", section, "disabled", "0" if radio.enabled else "1"))
@@ -789,9 +803,10 @@ def _wlan_lines(
     wlan: WirelessNetwork,
     capabilities: PlatformCapabilities,
     portal_network: str = "",
+    radios: Mapping[RadioBand, str] | None = None,
 ) -> tuple[str, ...]:
     section = _wlan_section(wlan)
-    device = _radio_section(wlan.band, wlan.radio_id)
+    device = _radio_section(wlan.band, wlan.radio_id, radios or {})
     network = "lan"
     if wlan.vlan.vlan_id is not None and capabilities.supports_ssid_vlan:
         network = f"openomada_vlan{wlan.vlan.vlan_id}"
@@ -1004,15 +1019,17 @@ def _rate_control_lines(
     band: RadioBand,
     active_wlans: Sequence[WirelessNetwork],
     wireless_state: WirelessState,
+    radios: Mapping[RadioBand, str],
 ) -> tuple[str, ...]:
     """Radio rate options for ``band``: hostapd sets rates per radio, not per SSID."""
     wlans = [wlan for wlan in active_wlans if wlan.band == band]
-    sections = {_radio_section(wlan.band, wlan.radio_id) for wlan in wlans} or _band_radio_sections(
-        band, wireless_state
-    )
+    sections = {_radio_section(wlan.band, wlan.radio_id, radios) for wlan in wlans}
+    if not sections and (band in radios or not radios):
+        # No SSIDs left on the band: still clear the rates the agent set.
+        sections = {_radio_section(band, None, radios)}
     lines: list[str] = []
     for section in sorted(sections):
-        on_radio = [wlan for wlan in wlans if _radio_section(wlan.band, wlan.radio_id) == section]
+        on_radio = [wlan for wlan in wlans if _radio_section(wlan.band, wlan.radio_id, radios) == section]
         wanted = {
             wlan.rate_control if wlan.rate_control is not None and wlan.rate_control.enabled else None
             for wlan in on_radio
@@ -1045,17 +1062,66 @@ def _rate_control_lines(
     return tuple(lines)
 
 
-def _band_radio_sections(band: RadioBand, wireless_state: WirelessState) -> set[str]:
-    """Radios of ``band`` from their UCI ``band`` option (board radio order varies)."""
-    sections = {
-        name
-        for name, options in wireless_state.items()
-        if options.get(".type") == "wifi-device" and options.get("band") == band.value
-    }
-    return sections or {_radio_section(band, None)}
+# UCI wifi-device ``band`` -> the Omada bands its radios fill, in order. A
+# second 5 GHz radio is the controller's 5 GHz-2.
+_UCI_BAND_SLOTS = {
+    "2g": (RadioBand.TWO_G,),
+    "5g": (RadioBand.FIVE_G, RadioBand.FIVE_G2),
+    "6g": (RadioBand.SIX_G,),
+}
 
 
-def _radio_section(band: RadioBand, radio_id: int | None) -> str:
+def assign_radio_bands(uci_bands: Mapping[str, str]) -> dict[RadioBand, str]:
+    """Omada band -> radio name, from each radio's UCI band (``2g``, ``5g``, ``6g``).
+
+    Board radio order varies (radio0 is 5 GHz on many boards), so the band
+    option decides. Two radios on one band are sorted by name: the first is
+    5 GHz, the second 5 GHz-2. Radios without a known band are left out.
+    """
+    by_band: dict[str, list[str]] = {}
+    for name, uci_band in uci_bands.items():
+        if uci_band in _UCI_BAND_SLOTS:
+            by_band.setdefault(uci_band, []).append(name)
+    radios: dict[RadioBand, str] = {}
+    for uci_band, names in by_band.items():
+        for slot, name in zip(_UCI_BAND_SLOTS[uci_band], sorted(names, key=_natural_key)):
+            radios[slot] = name
+    return radios
+
+
+def radio_sections_by_band(wireless_state: WirelessState) -> dict[RadioBand, str]:
+    """Omada band -> ``wifi-device`` section, from ``uci show wireless``."""
+    return assign_radio_bands(
+        {
+            name: options.get("band", "")
+            for name, options in wireless_state.items()
+            if options.get(".type") == "wifi-device"
+        }
+    )
+
+
+def _natural_key(name: str) -> tuple[object, ...]:
+    return tuple(int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name))
+
+
+def _missing_radio_errors(
+    update: ApplyDeviceConfigurationCommand,
+    capabilities: PlatformCapabilities,
+    radios: Mapping[RadioBand, str],
+) -> list[str]:
+    """Bands the SET configures that no radio has, when radios carry a band."""
+    if not radios:
+        return []
+    bands = [radio.band for radio in update.radios]
+    bands += [advanced.band for advanced in update.radio_advanced]
+    bands += [wlan.band for wlan in _active_wlans(update, capabilities)]
+    return [f"no wifi-device with the {band.value} band in UCI" for band in dict.fromkeys(bands) if band not in radios]
+
+
+def _radio_section(band: RadioBand, radio_id: int | None, radios: Mapping[RadioBand, str]) -> str:
+    """The ``wifi-device`` for ``band``; radio number only when UCI has no bands."""
+    if band in radios:
+        return radios[band]
     if radio_id is not None:
         return f"radio{radio_id}"
     return {

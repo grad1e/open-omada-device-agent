@@ -11,7 +11,7 @@ from ....contexts.clients.domain import ClientRadioBand, WirelessClientState
 from ....contexts.wireless.domain import RadioBand
 from ....shared.domain import MacAddress
 from ....util.mac_format import to_omada
-from .uci import CommandRunner, SubprocessRunner
+from .uci import CommandRunner, SubprocessRunner, assign_radio_bands
 from ....application.contracts import PlatformCapabilities
 from .capabilities import detect_platform_capabilities
 
@@ -107,8 +107,9 @@ class OpenWrtWirelessTelemetry:
         a real EAP reports what the radio runs on, e.g. 20 MHz after a 2.4 GHz
         Auto 20/40 radio fell back because of overlapping networks.
         """
+        bands = _radio_bands(status)
         for radio_name, raw_radio in status.items():
-            band = _band_from_radio_name(str(radio_name))
+            band = bands.get(str(radio_name))
             info = payload.get(f"wSettings_{INFORM_SUFFIX_BY_BAND[band]}") if band else None
             if not isinstance(raw_radio, Mapping) or not isinstance(info, dict):
                 continue
@@ -209,10 +210,11 @@ def openwrt_wireless_inform_from_status(
     """
     ids = ssid_ids or {}
     payload: dict[str, object] = {}
+    bands = _radio_bands(status)
     for radio_name, raw_radio in status.items():
         if not isinstance(raw_radio, Mapping):
             continue
-        band = _band_from_radio_name(str(radio_name))
+        band = bands.get(str(radio_name))
         if band is None:
             continue
         suffix = INFORM_SUFFIX_BY_BAND[band]
@@ -236,10 +238,11 @@ def openwrt_wireless_interfaces_from_status(
     status: Mapping[str, Any],
 ) -> tuple[OpenWrtWirelessInterface, ...]:
     interfaces: list[OpenWrtWirelessInterface] = []
+    bands = _radio_bands(status)
     for radio_name, raw_radio in status.items():
         if not isinstance(raw_radio, Mapping):
             continue
-        band = _band_from_radio_name(str(radio_name))
+        band = bands.get(str(radio_name))
         for interface in _interfaces(raw_radio.get("interfaces")):
             ifname = _interface_ifname(interface)
             if not ifname:
@@ -581,6 +584,31 @@ def _optional_int(*values: Any) -> int | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _radio_bands(status: Mapping[str, Any]) -> dict[str, RadioBand]:
+    """Radio name -> Omada band, from each radio's ``config.band``.
+
+    Uses the same rule as the UCI adapter, so telemetry reports a radio under
+    the band its settings are written for. The radio name is only a fallback
+    for radios without a band (old OpenWrt), and never takes a band another
+    radio already has.
+    """
+    uci_bands = {
+        str(name): str(_mapping(radio.get("config")).get("band") or "")
+        for name, radio in status.items()
+        if isinstance(radio, Mapping)
+    }
+    bands = {name: band for band, name in assign_radio_bands(uci_bands).items()}
+    taken = set(bands.values())
+    for name, uci_band in uci_bands.items():
+        if name in bands or uci_band:
+            continue
+        guess = _band_from_radio_name(name)
+        if guess is not None and guess not in taken:
+            bands[name] = guess
+            taken.add(guess)
+    return bands
 
 
 def _band_from_radio_name(name: str) -> RadioBand | None:
