@@ -401,6 +401,88 @@ def test_startup_falls_back_to_usable_channels_when_none_survive():
     assert "set wireless.radio1.channels='36 149'" in _batch_payloads(runner)[0]
 
 
+TRI_BAND_SHOW = CommandResult(
+    returncode=0,
+    stdout=(
+        "wireless.radio0=wifi-device\n"
+        "wireless.radio0.band='2g'\n"
+        "wireless.radio1=wifi-device\n"
+        "wireless.radio1.band='5g'\n"
+        "wireless.radio2=wifi-device\n"
+        "wireless.radio2.band='5g'\n"
+    ),
+)
+
+
+def _tri_band_caps():
+    from open_omada_device_agent.contexts.wireless.domain import (
+        RadioBand,
+        RadioChannel,
+        RadioHardware,
+    )
+
+    low = RadioHardware(
+        band=RadioBand.FIVE_G,
+        channels=(RadioChannel(36, 5180), RadioChannel(40, 5200), RadioChannel(48, 5240)),
+    )
+    high = RadioHardware(
+        band=RadioBand.FIVE_G2,
+        channels=(RadioChannel(149, 5745), RadioChannel(157, 5785), RadioChannel(165, 5825)),
+    )
+    return _caps(radio_hardware=(low, high))
+
+
+def _tri_band_runner(radio1, radio2):
+    responses = {("uci", "-q", "show", "wireless"): TRI_BAND_SHOW}
+    for radio, band, channels in (("radio0", "2g", ""), ("radio1", "5g", radio1), ("radio2", "5g", radio2)):
+        responses[("uci", "-q", "get", f"wireless.{radio}.band")] = CommandResult(returncode=0, stdout=f"{band}\n")
+        if channels:
+            responses[("uci", "-q", "get", f"wireless.{radio}.channels")] = CommandResult(
+                returncode=0, stdout=f"{channels}\n"
+            )
+    return BootstrapRunner(responses=responses)
+
+
+def test_tri_band_second_5ghz_radio_keeps_its_own_channels():
+    # radio2 is the high-band radio: before, it was checked against the
+    # low-band radio's channels and its list was replaced with 36-48.
+    runner = _tri_band_runner("36 40 48", "149 157 165")
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_tri_band_caps())
+
+    assert result.changed is False
+    assert _batch_payloads(runner) == []
+
+
+def test_tri_band_prunes_each_5ghz_radio_against_its_own_phy():
+    runner = _tri_band_runner("36 40 149", "48 157 165")
+
+    OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_tri_band_caps())
+
+    batch = _batch_payloads(runner)[0]
+    assert "set wireless.radio1.channels='36 40'" in batch
+    assert "set wireless.radio2.channels='157 165'" in batch
+
+
+def test_tri_band_falls_back_to_the_radios_own_channels_when_none_survive():
+    runner = _tri_band_runner("36 40", "36 40")
+
+    OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_tri_band_caps())
+
+    batch = _batch_payloads(runner)[0]
+    assert "radio1" not in batch
+    assert "set wireless.radio2.channels='149 157 165'" in batch
+
+
+def test_second_5ghz_radio_is_left_alone_without_a_second_5ghz_phy():
+    # Only one 5 GHz phy is known: radio1 is checked, radio2 is not touched.
+    runner = _tri_band_runner("36 149", "100 104")
+
+    result = OpenWrtStartupBootstrap(runner, config=_wifi_only()).prune_auto_channels(_prune_caps())
+
+    assert result.changed is False
+
+
 def test_bootstrap_points_opennds_at_the_configured_interface():
     runner = BootstrapRunner(
         responses={
