@@ -139,6 +139,9 @@ All notable project changes will be documented in this file.
 
 - A failed `ip addr add` for the DHCP fallback address is logged and tried
   again after 30 s, instead of being recorded as in use.
+- An AP without a default route (a network with no internet) can run openNDS
+  on a routed guest bridge: the route to the controller then identifies the
+  uplink.
 - Client snooping no longer logs an error with a traceback when the LAN
   bridge goes down for a moment during a network reload.
 - After an IP Settings change or a DHCP fallback switch, the controller is

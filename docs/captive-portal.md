@@ -38,7 +38,10 @@ SSH/LuCI is available only through `OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT=true`.
 openNDS treats every device on its interface as a portal client, including
 the upstream router. On an AP whose uplink is on the LAN bridge, openNDS on
 that bridge cuts the AP off from the gateway and the controller, so the agent
-refuses to start openNDS on the interface that holds the default route.
+refuses to start openNDS on the interface that holds the default route. On a
+network without internet (no default route), the interface of the route to
+the controller counts as the uplink; until one of the two is known, openNDS
+stays off.
 
 Put portal SSIDs on a routed guest network instead: a UCI network with its own
 subnet, DHCP and NAT. Set `OMADA_PORTAL_NETWORK` to that network and

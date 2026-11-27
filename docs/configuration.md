@@ -147,7 +147,7 @@ where lab-only manual setup belongs.
 | `OMADA_OPENWRT_BOOTSTRAP_OPENNDS` | `true` | Enable and start openNDS when installed |
 | `OMADA_OPENNDS_GATEWAY_PORT` | `2050` | openNDS local gateway port |
 | `OMADA_OPENNDS_GATEWAY_NAME` | device name | openNDS gateway name; empty uses `OMADA_DEVICE_NAME` |
-| `OMADA_OPENNDS_INTERFACE` | `OMADA_OPENWRT_LAN_BRIDGE` | Bridge openNDS guards. The agent refuses to start openNDS on the bridge that carries the default route |
+| `OMADA_OPENNDS_INTERFACE` | `OMADA_OPENWRT_LAN_BRIDGE` | Bridge openNDS guards. The agent refuses to start openNDS on the bridge that carries the default route (or, without one, the route to the controller) |
 | `OMADA_PORTAL_NETWORK` | empty | UCI network that portal SSIDs join, for example `guest`; empty keeps them on `lan` |
 | `OMADA_SITE_NAME` | empty | Human-readable fallback for External Portal redirects when no site ID is available |
 | `OMADA_OPENWRT_ENABLE_WAN_MANAGEMENT` | `false` | Lab-only opt-in to open SSH, LuCI HTTP, and LuCI HTTPS from the WAN zone |

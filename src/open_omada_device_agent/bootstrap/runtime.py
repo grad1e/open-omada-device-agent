@@ -62,7 +62,19 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
     capabilities = detect_platform_capabilities(env=dict(settings.capability_environment))
     if mac_is_random(settings.openwrt_lan_bridge):
         log.warning("%s", random_mac_message(settings.openwrt_lan_bridge, settings.mac))
+    state_repository = JsonSessionStateRepository(
+        settings.state_file,
+        device_mac=settings.mac,
+        controller_host=settings.controller_host,
+    )
+
+    def controller_host() -> str | None:
+        # The adopted controller's address, else the configured one.
+        state = state_repository.load()
+        return (state.controller_host if state else None) or settings.controller_host or None
+
     startup_bootstrap = OpenWrtStartupBootstrap(
+        controller_host=controller_host,
         config=OpenWrtBootstrapConfig(
             enabled=settings.openwrt_bootstrap,
             ensure_lan=settings.openwrt_bootstrap_lan,
@@ -94,11 +106,6 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
     rogue_ap_scanner = OpenWrtRogueApScanner()
     client_snooper = BridgeClientSnooper(settings.client_snoop_interfaces)
     notifications = OutboundNotifications()
-    state_repository = JsonSessionStateRepository(
-        settings.state_file,
-        device_mac=settings.mac,
-        controller_host=settings.controller_host,
-    )
 
     def controller_endpoint() -> tuple[str, int] | None:
         state = state_repository.load()
@@ -145,6 +152,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                 OpenWrtPortalRuntime(
                     interface=settings.portal_interface,
                     redirect_port=settings.portal_redirect_port,
+                    controller_host=controller_host,
                 ),
             ),
             command_ports=(
