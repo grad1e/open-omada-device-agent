@@ -271,6 +271,9 @@ DEVICE_CIPHER_TYPE = _int("OMADA_DEVICE_CIPHER_TYPE", 5)
 # Keep the historical filename for backward compatibility with existing labs.
 _state_mac = MAC.replace(":", "").replace("-", "").lower()
 STATE_FILE = os.getenv("OMADA_STATE_FILE", f".omada-agent-state-{_state_mac}.json")
+WIRELESS_STATE_FILE = os.getenv(
+    "OMADA_WIRELESS_STATE_FILE", f".omada-wireless-state-{_state_mac}.json"
+)
 
 
 def validate_runtime_config() -> None:
