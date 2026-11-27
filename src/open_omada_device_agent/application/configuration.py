@@ -16,6 +16,10 @@ class ReconciliationResult(Protocol):
 class ConfigurationPort(Protocol):
     def reconcile(self, update: ApplyDeviceConfigurationCommand, capabilities: PlatformCapabilities) -> ReconciliationResult: ...
 
+class PreflightPort(Protocol):
+    """Optional extra on a ConfigurationPort: an error stops the SET before any port runs."""
+    def preflight(self, update: ApplyDeviceConfigurationCommand, capabilities: PlatformCapabilities) -> str | None: ...
+
 class CapabilityDetector(Protocol):
     def __call__(self) -> PlatformCapabilities: ...
 
@@ -47,6 +51,12 @@ class ApplyDeviceConfiguration:
         changed = False
         capabilities = self._detect()
         ports = (self._platform_ports if has_platform else ()) + (self._command_ports if has_commands else ())
+        # Checks that must pass before any port changes the AP (a portal SSID
+        # must not be written when its portal cannot be enforced).
+        for port in ports:
+            preflight = getattr(port, "preflight", None)
+            if preflight is not None and (error := preflight(update, capabilities)):
+                return ApplyConfigurationResult(False, False, "; ".join(filter(None, (error, unsupported))))
         soft_errors: list[str] = []
         for port in ports:
             result = port.reconcile(update, capabilities)

@@ -6,6 +6,13 @@ from open_omada_device_agent.platform_capabilities import PlatformCapabilities
 from open_omada_device_agent.portal_runtime import OpenWrtPortalRuntime
 
 
+# A safe AP: openNDS on a guest bridge, uplink on another device.
+SAFE_UPLINK_ANSWERS = {
+    ("uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"): "br-guest\n",
+    ("ip", "-4", "route", "show", "default"): "default via 192.0.2.1 dev wan\n",
+}
+
+
 @dataclass
 class RecordingRunner:
     calls: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
@@ -16,6 +23,8 @@ class RecordingRunner:
         self.calls.append((command, input_text))
         if command == ("nft", "list", "table", "inet", "openomada_portal"):
             return CommandResult(returncode=0 if self.table_exists else 1)
+        if command in SAFE_UPLINK_ANSWERS:
+            return CommandResult(returncode=0, stdout=SAFE_UPLINK_ANSWERS[command])
         return CommandResult(returncode=0)
 
 
@@ -281,3 +290,70 @@ def test_portal_runtime_still_refuses_a_portal_ssid_when_opennds_is_on_the_uplin
 
     assert result.applied is False
     assert "uplink" in result.error
+
+
+def test_portal_runtime_preflight_refuses_a_portal_ssid_when_opennds_is_on_the_uplink():
+    # Runs before the UCI adapter, so the portal SSID is never written.
+    update = parse_config_body({"ssid_2G": {"ssid": [{"ssidName": "guest", "portal": True}]}})
+
+    error = OpenWrtPortalRuntime(UplinkGatewayRunner(), interface="").preflight(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert error is not None and "uplink" in error
+
+
+def test_portal_runtime_preflight_passes_without_a_portal_ssid():
+    update = parse_config_body({"ssid_2G": {"ssid": [{"ssidName": "corp"}]}})
+    runner = UplinkGatewayRunner()
+
+    error = OpenWrtPortalRuntime(runner, interface="").preflight(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert error is None
+    assert runner.calls == []
+
+
+def test_portal_runtime_preflight_passes_with_opennds_on_a_guest_bridge():
+    update = parse_config_body({"ssid_2G": {"ssid": [{"ssidName": "guest", "portal": True}]}})
+
+    error = OpenWrtPortalRuntime(RecordingRunner(), interface="").preflight(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert error is None
+
+
+@dataclass
+class UnsetGatewayRunner(RecordingRunner):
+    """No openNDS gatewayinterface option; the default route is on br-lan."""
+
+    def run(self, args, *, input_text=None):
+        command = tuple(args)
+        self.calls.append((command, input_text))
+        if command == ("uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"):
+            return CommandResult(returncode=1)
+        if command == ("ip", "-4", "route", "show", "default"):
+            return CommandResult(returncode=0, stdout="default via 192.0.2.1 dev br-lan\n")
+        return CommandResult(returncode=0)
+
+
+def test_portal_runtime_treats_an_unset_opennds_gateway_as_br_lan():
+    # openNDS falls back to br-lan, which is the uplink here: skip, don't restart.
+    update = parse_config_body(
+        {"portalFreePolicyConfig": {"urlPortalFreePolicy": [{"url": "portal.example.com"}]}}
+    )
+    runner = UnsetGatewayRunner()
+
+    result = OpenWrtPortalRuntime(runner, interface="").reconcile(
+        update,
+        _caps(has_opennds=True, has_nft=False),
+    )
+
+    assert result.applied is True
+    assert result.changed is False
+    assert not any(command[0] == "/etc/init.d/opennds" for command, _ in runner.calls)

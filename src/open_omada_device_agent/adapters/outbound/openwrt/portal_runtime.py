@@ -44,6 +44,20 @@ class OpenWrtPortalRuntime:
     def _opennds(self) -> OpenNdsPortalAdapter:
         return OpenNdsPortalAdapter(self._runner, controller_host=self._controller_host)
 
+    def preflight(
+        self,
+        update: ApplyDeviceConfigurationCommand,
+        capabilities: PlatformCapabilities,
+    ) -> str | None:
+        """Refuse a portal SSID before any port writes it.
+
+        The UCI adapter runs first; checking only in reconcile() would leave
+        the portal SSID broadcasting with nothing enforcing the portal.
+        """
+        if capabilities.has_opennds and _needs_portal_runtime(update, capabilities):
+            return self._opennds().uplink_capture_error()
+        return None
+
     def reconcile(
         self,
         update: ApplyDeviceConfigurationCommand,

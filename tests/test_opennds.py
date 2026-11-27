@@ -19,6 +19,13 @@ from open_omada_device_agent.openwrt import CommandResult
 from open_omada_device_agent.platform_capabilities import PlatformCapabilities
 
 
+# A safe AP: openNDS on a guest bridge, uplink on another device.
+SAFE_UPLINK_ANSWERS = {
+    ("uci", "-q", "get", "opennds.@opennds[0].gatewayinterface"): "br-guest\n",
+    ("ip", "-4", "route", "show", "default"): "default via 192.0.2.1 dev wan\n",
+}
+
+
 @dataclass
 class StaticRunner:
     result: CommandResult
@@ -26,6 +33,8 @@ class StaticRunner:
 
     def run(self, args, *, input_text=None):
         self.calls.append((tuple(args), input_text))
+        if tuple(args) in SAFE_UPLINK_ANSWERS:
+            return CommandResult(returncode=0, stdout=SAFE_UPLINK_ANSWERS[tuple(args)])
         return self.result
 
 
@@ -405,6 +414,8 @@ class DeleteMissingRunner:
         self.calls.append(command)
         if command[:3] == ("uci", "-q", "delete"):
             return CommandResult(returncode=1)
+        if command in SAFE_UPLINK_ANSWERS:
+            return CommandResult(returncode=0, stdout=SAFE_UPLINK_ANSWERS[command])
         return CommandResult(returncode=0)
 
 

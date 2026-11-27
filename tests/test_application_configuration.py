@@ -240,3 +240,60 @@ def test_apply_configuration_reports_adapter_failure_and_unsupported_keys():
 
     assert result.applied is False
     assert result.error == "platform rejected update; unsupported keys: macFilterAssoc"
+
+
+class PreflightPort(RecordingPort):
+    def __init__(self, error=None):
+        super().__init__(Result(changed=True))
+        self.error = error
+
+    def preflight(self, update, capabilities):
+        return self.error
+
+
+def test_apply_configuration_preflight_error_stops_before_any_port_runs():
+    # The portal check lives on a later port, but the SSID port must not run.
+    ssid_port = RecordingPort(Result(changed=True))
+    portal_port = PreflightPort(error="openNDS gateway is the uplink")
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=lambda: "host capabilities",
+        platform_ports=(ssid_port, portal_port),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+            unhandled_keys=("macFilterAssoc",),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is False
+    assert result.error == "openNDS gateway is the uplink; unsupported keys: macFilterAssoc"
+    assert ssid_port.calls == [] and portal_port.calls == []
+
+
+def test_apply_configuration_runs_ports_when_preflight_passes():
+    portal_port = PreflightPort(error=None)
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=lambda: "host capabilities",
+        platform_ports=(portal_port,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+        )
+    )
+
+    assert result.applied is True
+    assert len(portal_port.calls) == 1
+
