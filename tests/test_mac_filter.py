@@ -217,3 +217,114 @@ def test_refused_change_does_not_alter_state():
     adapter.reconcile(parse_config_body({"configVersionInc": 1, **_ssid_body()}), _caps())
 
     assert "macfilter='deny'" in _batches(runner)[-1]
+
+
+def _full_deny():
+    return parse_config_body(
+        {"configVersion": 5, "macFilterGlobal": {"enable": True}, "macFilterList": _group(MAC1),
+         "macFilterAssoc": _assoc(), **_ssid_body()}
+    )
+
+
+def test_state_survives_an_agent_restart(tmp_path):
+    state_file = tmp_path / ".omada-wireless-state-020000000001.json"
+    OpenWrtUciAdapter(_Runner(), state_file=state_file).reconcile(_full_deny(), _caps())
+
+    # A new process gets only an incremental SET: the filter is still known.
+    runner = _Runner()
+    restarted = OpenWrtUciAdapter(runner, state_file=state_file)
+    assert restarted.reconcile(parse_config_body({"configVersionInc": 1, **_ssid_body()}), _caps()).applied
+
+    assert "macfilter='deny'" in _batches(runner)[-1]
+
+
+def test_unreadable_state_file_starts_empty(tmp_path):
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{not json")
+    runner = _Runner()
+    adapter = OpenWrtUciAdapter(runner, state_file=state_file)
+
+    assert adapter.reconcile(parse_config_body({"configVersionInc": 1, **_ssid_body()}), _caps()).applied
+    assert "macfilter" not in _batches(runner)[-1]
+
+
+class _FailingRunner(_Runner):
+    def __init__(self, fail):
+        super().__init__()
+        self.fail = fail
+
+    def run(self, args, *, input_text=None):
+        if tuple(args[:3]) == self.fail:
+            self.calls.append((tuple(args), input_text))
+            return CommandResult(1, "", "failed")
+        return super().run(args, input_text=input_text)
+
+
+def test_failed_uci_batch_keeps_the_old_state(tmp_path):
+    state_file = tmp_path / "state.json"
+    adapter = OpenWrtUciAdapter(_FailingRunner(("uci", "-q", "batch")), state_file=state_file)
+
+    assert not adapter.reconcile(_full_deny(), _caps()).applied
+    assert not state_file.exists()
+
+
+def test_failed_wifi_reload_still_keeps_the_new_state(tmp_path):
+    # UCI already holds the filter; the next SET must not drop it.
+    state_file = tmp_path / "state.json"
+    runner = _FailingRunner(("wifi", "reload"))
+    adapter = OpenWrtUciAdapter(runner, state_file=state_file)
+
+    result = adapter.reconcile(_full_deny(), _caps())
+    assert not result.applied and result.changed
+    adapter.reconcile(parse_config_body({"configVersionInc": 1, **_ssid_body()}), _caps())
+
+    assert "macfilter='deny'" in _batches(runner)[-1]
+    assert state_file.exists()
+
+
+def test_link_to_a_deleted_group_filters_nothing():
+    state = _state(macFilterGlobal={"enable": True}, macFilterList=_group(MAC1), macFilterAssoc=_assoc(action=1))
+    gone = state.apply(MacFilterChange(list_rules=(MacFilterListRule(operation=2, list_id=LIST_ID),)), full_sync=False)
+
+    # An Allow List with no group would block every client.
+    assert gone.policy(SSID_ID, 0) is None
+
+
+def test_allow_list_ignores_linked_deny_lists():
+    other = LIST_ID + 1
+    state = _state(macFilterGlobal={"enable": True}, macFilterList=_group(MAC1), macFilterAssoc=_assoc(action=1))
+    state = state.apply(
+        MacFilterChange(
+            list_rules=(
+                MacFilterListRule(operation=1, list_id=other),
+                MacFilterListRule(operation=1, list_id=other, rule_id=1, mac=MAC2),
+            ),
+            assoc_rules=(MacFilterAssocRule(operation=1, ssid_id=SSID_ID, band=0, list_id=other, action=0),),
+        ),
+        full_sync=False,
+    )
+
+    policy = state.policy(SSID_ID, 0)
+    assert policy is not None and policy.allow and policy.macs == (MAC1,)
+
+
+def test_state_round_trips_through_json():
+    state = _state(macFilterGlobal={"enable": True}, macFilterList=_group(MAC1, MAC2), macFilterAssoc=_assoc())
+
+    assert MacFilterState.from_dict(state.to_dict()) == state
+
+
+def test_filter_change_skips_ssids_deleted_in_the_same_batch():
+    state = _state(macFilterGlobal={"enable": True}, macFilterList=_group(MAC1), macFilterAssoc=_assoc())
+    wireless_state = {
+        "openomada_5g_1": {".type": "wifi-iface", "openomada_managed": "1", "openomada_ssid_id": str(SSID_ID)},
+    }
+    # The 5 GHz band is listed with no SSIDs: its SSID is removed.
+    update = parse_config_body({"macFilterList": _group(MAC1), "ssid_5G": {"radioId": 1, "ssid": []}})
+
+    batch = build_uci_batch(
+        update, _caps(), mac_filter=state, mac_filter_changed=True, wireless_state=wireless_state
+    )
+
+    assert "delete wireless.openomada_5g_1" in batch
+    assert _filter_lines(batch, "openomada_5g_1") == []

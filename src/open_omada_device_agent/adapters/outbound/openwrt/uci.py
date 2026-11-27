@@ -5,11 +5,14 @@ domain objects; this adapter turns supported domain objects into UCI changes.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from .... import config
@@ -80,15 +83,16 @@ class OpenWrtUciAdapter:
         management_vlan_interface: str | None = None,
         management_vlan_device: str | None = None,
         portal_network: str = "",
+        state_file: Path | None = None,
     ) -> None:
         self._runner = runner or SubprocessRunner()
         self._management_vlan_interface = management_vlan_interface
         self._management_vlan_device = management_vlan_device
         self._portal_network = portal_network
-        # MAC filter groups and SSID links as last applied. The controller
-        # resends the whole setup on every reconnect (full sync), so memory is
-        # enough (Observed: lab, agent restart).
-        self._mac_filter = MacFilterState()
+        # MAC filter groups and SSID links as last applied. Changes arrive one
+        # rule at a time, so the state is saved to survive an agent restart.
+        self._state_file = state_file
+        self._mac_filter = _load_mac_filter(state_file)
 
     def reconcile(
         self,
@@ -163,7 +167,7 @@ class OpenWrtUciAdapter:
             mac_filter_changed=update.mac_filter is not None,
         )
         if not batch:
-            self._mac_filter = mac_filter
+            self._commit_mac_filter(mac_filter)
             return ReconciliationResult(
                 applied=True,
                 changed=False,
@@ -177,6 +181,8 @@ class OpenWrtUciAdapter:
                 error=(result.stderr or result.stdout or "uci batch failed").strip(),
                 command_count=len(batch),
             )
+        # UCI now holds the new filter; a failed reload does not undo that.
+        self._commit_mac_filter(mac_filter)
 
         reload_result = self._runner.run(["wifi", "reload"])
         if reload_result.returncode != 0:
@@ -187,12 +193,25 @@ class OpenWrtUciAdapter:
                 command_count=len(batch),
             )
 
-        self._mac_filter = mac_filter
         return ReconciliationResult(
             applied=True,
             changed=True,
             command_count=len(batch),
         )
+
+    def _commit_mac_filter(self, mac_filter: MacFilterState) -> None:
+        if mac_filter == self._mac_filter:
+            return
+        self._mac_filter = mac_filter
+        if self._state_file is None:
+            return
+        try:
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self._state_file.with_name(self._state_file.name + ".tmp")
+            tmp_path.write_text(json.dumps({"macFilter": mac_filter.to_dict()}, sort_keys=True) + "\n")
+            os.replace(tmp_path, self._state_file)
+        except OSError as exc:
+            log.warning("Could not save MAC filter state to %s: %s", self._state_file, exc)
 
     def _wireless_state(self, update: ApplyDeviceConfigurationCommand) -> WirelessState:
         """Read ``wireless`` sections when Advanced radio settings are involved."""
@@ -200,6 +219,8 @@ class OpenWrtUciAdapter:
             return {}
         result = self._runner.run(["uci", "-q", "show", "wireless"])
         if result.returncode != 0:
+            if update.mac_filter is not None:
+                log.warning("uci show wireless failed; SSIDs this SET does not rebuild keep their old MAC filter")
             return {}
         return parse_uci_show(result.stdout)
 
@@ -352,12 +373,13 @@ def build_uci_batch(
     for wlan in omitted_wlans:
         lines.append(f"delete wireless.{_wlan_section(wlan)}")
     omitted = {_wlan_section(wlan) for wlan in omitted_wlans}
-    for section in _removed_ssid_sections(update.wlan_bands, rebuilt | omitted, wireless_state):
+    removed = _removed_ssid_sections(update.wlan_bands, rebuilt | omitted, wireless_state)
+    for section in removed:
         lines.append(f"delete wireless.{section}")
     if mac_filter_changed:
         # SSIDs this SET does not rebuild still follow the new MAC filter.
         for section, ssid_id, band in _managed_ssid_sections(wireless_state):
-            if section in rebuilt or section in omitted:
+            if section in rebuilt or section in omitted or section in removed:
                 continue
             policy = mac_filter.policy(ssid_id, band)
             lines.extend(_mac_filter_lines(section, policy, reset=True))
@@ -464,6 +486,16 @@ def _mac_filter_lines(section: str, policy: MacFilterPolicy | None, *, reset: bo
     for mac in policy.macs:
         lines.append(f"add_list wireless.{section}.maclist='{_normal_mac(mac)}'")
     return tuple(lines)
+
+
+def _load_mac_filter(state_file: Path | None) -> MacFilterState:
+    if state_file is None or not state_file.exists():
+        return MacFilterState()
+    try:
+        return MacFilterState.from_dict(json.loads(state_file.read_text())["macFilter"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        log.warning("Ignoring unreadable MAC filter state %s: %s", state_file, exc)
+        return MacFilterState()
 
 
 def _normal_mac(mac: str) -> str:

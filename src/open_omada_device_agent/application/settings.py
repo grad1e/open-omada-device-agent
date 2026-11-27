@@ -68,6 +68,8 @@ class AgentSettings:
     state_file: Path
     capability_environment: tuple[tuple[str, str], ...]
     client_snoop_interfaces: str = "auto"
+    # Wireless setup the controller only sends as changes (MAC filter groups).
+    wireless_state_file: Path | None = None
 
     def validate(self) -> None:
         if not self.controller_host:

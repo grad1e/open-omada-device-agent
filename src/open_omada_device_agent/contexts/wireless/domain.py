@@ -257,15 +257,54 @@ class MacFilterState:
         """The filter for one SSID and band, or None when it has none."""
         if not self.enabled or ssid_id is None:
             return None
-        links = self.assoc.get((ssid_id, band))
+        # A link to a group that no longer exists filters nothing; without
+        # this a deleted group could leave an empty Allow List that blocks
+        # every client.
+        links = {
+            list_id: action
+            for list_id, (action, _) in self.assoc.get((ssid_id, band), {}).items()
+            if list_id in self.lists
+        }
         if not links:
             return None
-        allow = any(action == MAC_FILTER_ALLOW for action, _ in links.values())
+        # With any Allow List linked, only allowed MACs may join, so Deny
+        # Lists add nothing (Inferred: the controller UI offers one mode per
+        # SSID). An Allow List with an empty group blocks every client
+        # (Unknown whether a real EAP does the same).
+        allow = MAC_FILTER_ALLOW in links.values()
+        wanted = MAC_FILTER_ALLOW if allow else MAC_FILTER_DENY
         macs = sorted(
             {
                 mac
-                for list_id in links
-                for mac in self.lists.get(list_id, {}).values()
+                for list_id, action in links.items()
+                if action == wanted
+                for mac in self.lists[list_id].values()
             }
         )
         return MacFilterPolicy(allow=allow, macs=tuple(macs))
+
+    def to_dict(self) -> dict[str, Any]:
+        """A JSON-safe copy, for saving between agent restarts."""
+        return {
+            "enabled": self.enabled,
+            "lists": {str(list_id): {str(rule): mac for rule, mac in members.items()}
+                      for list_id, members in self.lists.items()},
+            "assoc": [
+                {"ssidId": ssid_id, "band": band, "listId": list_id, "action": action, "type": kind}
+                for (ssid_id, band), links in self.assoc.items()
+                for list_id, (action, kind) in links.items()
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "MacFilterState":
+        """Rebuild a state saved by ``to_dict``; raises on a malformed file."""
+        lists = {
+            int(list_id): {int(rule): str(mac) for rule, mac in members.items()}
+            for list_id, members in data.get("lists", {}).items()
+        }
+        assoc: dict[tuple[int, int], dict[int, tuple[int, int]]] = {}
+        for link in data.get("assoc", []):
+            key = (int(link["ssidId"]), int(link["band"]))
+            assoc.setdefault(key, {})[int(link["listId"])] = (int(link["action"]), int(link["type"]))
+        return cls(enabled=bool(data.get("enabled", False)), lists=lists, assoc=assoc)

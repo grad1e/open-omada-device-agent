@@ -148,6 +148,7 @@ def build_runtime(settings: AgentSettings) -> AgentRuntime:
                     management_vlan_interface=settings.management_vlan_interface,
                     management_vlan_device=settings.management_vlan_device,
                     portal_network=settings.portal_network,
+                    state_file=settings.wireless_state_file,
                 ),
                 OpenWrtPortalRuntime(
                     interface=settings.portal_interface,

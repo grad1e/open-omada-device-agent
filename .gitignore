@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .omada-agent-state-*.json
+.omada-wireless-state-*.json
 *.pem
 *.key
 *.p12

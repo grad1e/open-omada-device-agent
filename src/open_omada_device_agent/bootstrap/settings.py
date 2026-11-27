@@ -22,6 +22,7 @@ class AgentSettings(RuntimeAgentSettings):
             managed_reconnect_attempts=config.MANAGED_RECONNECT_ATTEMPTS,
             tls_verify=config.TLS_VERIFY,
             state_file=Path(config.STATE_FILE).expanduser(),
+            wireless_state_file=Path(config.WIRELESS_STATE_FILE).expanduser(),
             tls_ca_file=Path(config.TLS_CA_FILE).expanduser() if config.TLS_CA_FILE else None,
             mac=config.MAC,
             device_name=config.DEVICE_NAME,

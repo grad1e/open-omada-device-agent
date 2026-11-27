@@ -9,7 +9,9 @@ All notable project changes will be documented in this file.
 - MAC filtering from the SSID editor: the controller's MAC groups and
   allow/deny lists are applied as `macfilter` and `maclist` on each SSID.
   Group edits update every SSID that uses the group. OUI profiles are
-  refused (hostapd matches exact MAC addresses only).
+  refused (hostapd matches exact MAC addresses only). The filter state is
+  saved in `.omada-wireless-state-<mac>.json` (`OMADA_WIRELESS_STATE_FILE`)
+  so it survives an agent restart.
 - SSID "Load Balance" turns on 802.11k (`ieee80211k`), and 802.11v
   (`bss_transition`) when the AP's hostapd has it. `wpad-basic` has no
   802.11v, so only 802.11k is written there. Clients are not moved yet:
