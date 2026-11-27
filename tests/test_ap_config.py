@@ -242,9 +242,10 @@ def test_parse_initial_controller_defaults_as_passive_config():
         "ipGroup",
         "ipv6Group",
         "logSetting",
-        "schedulerGlobal",
         "ssh",
     )
+    # WLAN schedules are applied by the wireless adapter.
+    assert update.schedule is not None and update.schedule.enabled is True
     # MAC filtering is applied by the wireless adapter.
     assert update.mac_filter is not None and update.mac_filter.enabled is True
     # LLDP is applied by its own command port.
@@ -256,16 +257,15 @@ def test_parse_initial_controller_defaults_as_passive_config():
     assert update.lan_ip.fallback_ip == "192.168.0.254"
 
 
-def test_parse_scheduler_as_passive_and_wireless_advanced_as_radio_advanced():
+def test_parse_wireless_advanced_as_radio_advanced():
     update = parse_config_body(
         {
-            "schedulerAssoc": [{"id": 1, "profileId": 2}],
             "wirelessAdv_2G": {"radioId": 0, "dtimPeriod": 1, "beaconInterval": 100},
         }
     )
 
     assert update.unhandled_keys == ()
-    assert update.passive_keys == ("schedulerAssoc",)
+    assert update.passive_keys == ()
     assert len(update.radio_advanced) == 1
     assert update.radio_advanced[0].radio_id == 0
     assert update.radio_advanced[0].ofdma is None

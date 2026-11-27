@@ -20,6 +20,9 @@ from .....contexts.wireless.domain import (
     WirelessDhcpOption82Intent,
     WirelessNetwork, WirelessSecurity, WirelessVlanIntent, validate_ssid_name,
 )
+from .....contexts.wireless.schedule import (
+    ScheduleAssocRule, ScheduleChange, ScheduleListRule, SchedulePeriod,
+)
 from .....shared.domain import SecretValue
 
 AccessPointConfigUpdate = ApplyDeviceConfigurationCommand
@@ -62,7 +65,6 @@ CONTROL_PLANE_PASSIVE_CONFIG_KEYS = {
     "ipGroup",
     "ipv6Group",
     "logSetting",
-    "schedulerGlobal",
     "ssh",
 }
 
@@ -75,7 +77,6 @@ PASSIVE_CONFIG_KEYS = {
     # the classification itself from ``rogueApList``.
     "rogueApGlobal",
     "rogueApSetting",
-    "schedulerAssoc",
 }
 
 ACK_ONLY_CONFIG_KEYS: set[str] = set()
@@ -86,6 +87,9 @@ NETWORK_CHECK_KEYS = ("ping", "traceroute", "dnslookup", "arptable")
 # MAC filtering: the global switch, the MAC groups and their SSID links.
 MAC_FILTER_KEYS = ("macFilterGlobal", "macFilterList", "macFilterAssoc")
 
+# WLAN schedules: the global switch, the time ranges and their SSID links.
+SCHEDULE_KEYS = ("schedulerGlobal", "schedulerList", "schedulerAssoc")
+
 KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PASSIVE_CONFIG_KEYS | {
     "clientConfig",
     "clientOperation",
@@ -93,6 +97,7 @@ KNOWN_CONFIG_KEYS = set(RADIO_KEYS) | set(SSID_KEYS) | RADIO_ADVANCED_KEYS | PAS
     "clientRateConfig",
     "lanSetting",
     *MAC_FILTER_KEYS,
+    *SCHEDULE_KEYS,
     "led",
     "managementVlan",
     "portalConfigList",
@@ -203,6 +208,7 @@ def parse_config_body(body: Mapping[str, Any]) -> AccessPointConfigUpdate:
         time_zone=parse_time_zone(body),
         lan_ip=_parse_lan_setting(body.get("lanSetting")),
         mac_filter=_parse_mac_filter(body),
+        schedule=_parse_schedule(body),
         radio_advanced=radio_advanced,
         passive_keys=tuple(sorted(key for key in body if key in PASSIVE_CONFIG_KEYS)),
         ack_only_keys=tuple(sorted(key for key in body if key in ACK_ONLY_CONFIG_KEYS)),
@@ -691,6 +697,47 @@ def _parse_mac_filter(body: Mapping[str, Any]) -> MacFilterChange | None:
         )
     return MacFilterChange(
         enabled=_optional_bool(global_raw.get("enable")),
+        list_rules=tuple(list_rules),
+        assoc_rules=tuple(assoc_rules),
+    )
+
+
+def _parse_schedule(body: Mapping[str, Any]) -> ScheduleChange | None:
+    if not any(key in body for key in SCHEDULE_KEYS):
+        return None
+    global_raw = _optional_mapping(body.get("schedulerGlobal")) or {}
+    list_rules = []
+    for item in _mac_filter_rules(body.get("schedulerList"), "schedulerList"):
+        rule_id = _optional_int(item.get("ruleId"))
+        period = None
+        if rule_id is not None and item.get("type") is not None:
+            period = SchedulePeriod(
+                type=str(item["type"]),
+                day=_optional_int(item.get("day")) or 0,
+                start=(_optional_int(item.get("startH")) or 0) * 60 + (_optional_int(item.get("startM")) or 0),
+                end=(_optional_int(item.get("endH")) or 0) * 60 + (_optional_int(item.get("endM")) or 0),
+            )
+        list_rules.append(
+            ScheduleListRule(
+                operation=_required_int(item, "operation", "schedulerList"),
+                profile_id=_required_int(item, "profileId", "schedulerList"),
+                rule_id=rule_id,
+                period=period,
+            )
+        )
+    assoc_rules = []
+    for item in _mac_filter_rules(body.get("schedulerAssoc"), "schedulerAssoc"):
+        assoc_rules.append(
+            ScheduleAssocRule(
+                ssid_id=_required_int(item, "ssidId", "schedulerAssoc"),
+                band=_required_int(item, "band", "schedulerAssoc"),
+                profile_id=_optional_int(item.get("profileId")),
+                action=_optional_int(item.get("action")) or 0,
+            )
+        )
+    return ScheduleChange(
+        enabled=_optional_bool(global_raw.get("enable")),
+        mode=_optional_int(global_raw.get("mode")),
         list_rules=tuple(list_rules),
         assoc_rules=tuple(assoc_rules),
     )

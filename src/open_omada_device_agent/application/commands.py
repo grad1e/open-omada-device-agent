@@ -11,6 +11,7 @@ from ..contexts.portal.domain import PortalConfiguration, PortalFreePolicy
 from ..contexts.wireless.domain import (
     MacFilterChange, RadioAdvancedConfig, RadioBand, RadioConfig, WirelessNetwork,
 )
+from ..contexts.wireless.schedule import ScheduleChange
 
 @dataclass(frozen=True)
 class ApplyDeviceConfigurationCommand:
@@ -37,6 +38,7 @@ class ApplyDeviceConfigurationCommand:
     lan_ip: LanIpSetting | None = None
     radio_advanced: tuple[RadioAdvancedConfig, ...] = ()
     mac_filter: MacFilterChange | None = None
+    schedule: ScheduleChange | None = None
     passive_keys: tuple[str, ...] = ()
     ack_only_keys: tuple[str, ...] = ()
     unhandled_keys: tuple[str, ...] = ()

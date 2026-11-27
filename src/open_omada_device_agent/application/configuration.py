@@ -36,6 +36,13 @@ class ApplyDeviceConfiguration:
         self._command_ports = command_ports
         self._allow_ack_only_config = allow_ack_only_config
 
+    def tick(self) -> None:
+        """Time-based work (WLAN schedules); call about once a minute."""
+        for port in self._platform_ports:
+            tick = getattr(port, "tick", None)
+            if tick is not None:
+                tick()
+
     def execute(self, update: ApplyDeviceConfigurationCommand) -> ApplyConfigurationResult:
         # Unsupported keys still fail the SET, but only after the supported
         # domains in the same SET are applied: one unknown key must not leave
@@ -46,7 +53,7 @@ class ApplyDeviceConfiguration:
                 "Preserving passive AP config domains without local OpenWrt changes: %s",
                 ",".join(update.passive_keys),
             )
-        has_platform = bool(update.radios or update.radio_advanced or update.wlans or update.wlan_bands or update.management_vlan is not None or update.portal_free_policy is not None or update.mac_filter is not None)
+        has_platform = bool(update.radios or update.radio_advanced or update.wlans or update.wlan_bands or update.management_vlan is not None or update.portal_free_policy is not None or update.mac_filter is not None or update.schedule is not None)
         has_commands = bool(update.led is not None or update.wifi_control_led is not None or update.client_configs or update.client_operations or update.client_rate_config is not None or update.rogue_ap_scan or update.network_checks or update.snmp is not None or update.lldp is not None or update.time_zone is not None or update.lan_ip is not None)
         changed = False
         capabilities = self._detect()
