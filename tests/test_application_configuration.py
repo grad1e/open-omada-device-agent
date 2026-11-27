@@ -297,3 +297,54 @@ def test_apply_configuration_runs_ports_when_preflight_passes():
     assert result.applied is True
     assert len(portal_port.calls) == 1
 
+
+def test_apply_configuration_reports_ack_only_and_unsupported_keys_once():
+    platform = RecordingPort(Result(changed=True))
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=lambda: "host capabilities",
+        platform_ports=(platform,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+            ack_only_keys=("ssh",),
+            unhandled_keys=("macFilterAssoc",),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is True
+    assert result.error == (
+        "ack-only control-plane keys require OMADA_LAB_ACK_CONTROL_PLANE_CONFIG=true: ssh; "
+        "unsupported keys: macFilterAssoc; supported domains were applied first"
+    )
+
+
+def test_apply_configuration_reports_soft_error_and_unsupported_keys():
+    platform = RecordingPort(Result(changed=True, error="partial platform apply"))
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=lambda: "host capabilities",
+        platform_ports=(platform,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+            unhandled_keys=("macFilterAssoc",),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is True
+    assert result.error == (
+        "partial platform apply; unsupported keys: macFilterAssoc; supported domains were applied first"
+    )
