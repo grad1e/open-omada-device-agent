@@ -204,6 +204,32 @@ def test_name_guess_never_takes_a_band_another_radio_has():
     assert "wSettings_2G" not in payload
 
 
+def test_radio_without_band_is_left_out_when_others_have_one():
+    # The UCI adapter refuses 5 GHz settings here (no radio has band 5g), so
+    # telemetry must not report radio1 as 5 GHz either.
+    status = {
+        "radio0": {"config": {"band": "2g", "channel": 6}, "interfaces": []},
+        "radio1": {"config": {"channel": 36}, "interfaces": []},
+    }
+
+    payload = openwrt_wireless_inform_from_status(status)
+
+    assert payload["wSettings_2G"]["ch"] == "6"
+    assert "wSettings_5G" not in payload
+
+
+def test_radio_names_are_used_when_no_radio_has_a_band():
+    status = {
+        "radio0": {"config": {"channel": 6}, "interfaces": []},
+        "radio1": {"config": {"channel": 36}, "interfaces": []},
+    }
+
+    payload = openwrt_wireless_inform_from_status(status)
+
+    assert payload["wSettings_2G"]["ch"] == "6"
+    assert payload["wSettings_5G"]["ch"] == "36"
+
+
 class _TelemetryRunner:
     def __init__(self):
         self.calls = []

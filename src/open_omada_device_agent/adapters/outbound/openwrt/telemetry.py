@@ -591,8 +591,9 @@ def _radio_bands(status: Mapping[str, Any]) -> dict[str, RadioBand]:
 
     Uses the same rule as the UCI adapter, so telemetry reports a radio under
     the band its settings are written for. The radio name is only a fallback
-    for radios without a band (old OpenWrt), and never takes a band another
-    radio already has.
+    when no radio has a band (old OpenWrt), and never takes a band another
+    radio already has. Once any radio has a band, a radio without one is left
+    out, as the UCI adapter refuses settings for it.
     """
     uci_bands = {
         str(name): str(_mapping(radio.get("config")).get("band") or "")
@@ -600,9 +601,11 @@ def _radio_bands(status: Mapping[str, Any]) -> dict[str, RadioBand]:
         if isinstance(radio, Mapping)
     }
     bands = {name: band for band, name in assign_radio_bands(uci_bands).items()}
-    taken = set(bands.values())
+    if bands:
+        return bands
+    taken: set[RadioBand] = set()
     for name, uci_band in uci_bands.items():
-        if name in bands or uci_band:
+        if uci_band:
             continue
         guess = _band_from_radio_name(name)
         if guess is not None and guess not in taken:
