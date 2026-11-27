@@ -29,7 +29,8 @@ class RadioFacts:
 @dataclass(frozen=True)
 class ModelMatch:
     model: str
-    hw_version: str
+    model_version: str
+    hardware_version: str
     overclaim: int
     shortfall: int
 
@@ -89,4 +90,10 @@ def best_model(
     if not ranked:
         return None
     key, row = min(ranked, key=lambda item: item[0])
-    return ModelMatch(row["model"], row["hw_version"], overclaim=key[0], shortfall=key[1])
+    return ModelMatch(
+        row["model"],
+        row["model_version"],
+        row["hardware_version"],
+        overclaim=key[0],
+        shortfall=key[1],
+    )

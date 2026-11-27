@@ -25,7 +25,8 @@ OUTPUT = Path(__file__).resolve().parents[1] / (
 
 BANDS = {"2.4G": "2g", "5G": "5g", "6G": "6g"}
 
-# supportRadioMode bits (Observed: they line up with each model's Wi-Fi generation).
+# supportRadioMode bits (Inferred from the templates: they line up with each
+# model's Wi-Fi generation).
 MODE_BITS = {
     "2g": {128: 6, 256: 7},
     "5g": {64: 5, 256: 6, 1024: 7},
@@ -36,6 +37,16 @@ MODE_BITS = {
 WIDTH_BITS = ((0x2000000, 320), (0x1000000, 160), (0x800000, 80), (0x60000, 40))
 
 _REGION = re.compile(r"\s*\(([A-Z]{2})\)$")
+
+
+def _version(value) -> str:
+    """A version as the device sent it, as text (some send the number 1)."""
+    return "" if value is None else str(value).strip()
+
+
+def version_key(value: str) -> tuple[int, ...]:
+    """Numeric order: "v1.0" < "1.20" < "2.0" < "10.0"."""
+    return tuple(int(part) for part in re.findall(r"\d+", value)) or (0,)
 
 
 def _base_name(model: str) -> tuple[str, str]:
@@ -85,9 +96,12 @@ def reduce_template(record: dict) -> dict | None:
     if not radios:
         return None
     name, region = _base_name(record["model"])
+    info = adopt.get("deviceInfo") or {}
     return {
         "model": name,
-        "hw_version": str(record.get("hw_version") or ""),
+        # What a real device of this model sends at adoption.
+        "model_version": _version(info.get("modelVersion")),
+        "hardware_version": _version(info.get("hardwareVersion")),
         "regions": [region] if region else [],
         "gen": _generation(dev_cap),
         "dfs": bool(misc.get("supportDfs")),
@@ -104,12 +118,14 @@ def build(records: list[dict]) -> list[dict]:
         row = reduce_template(record)
         if row is None:
             continue
+        if "(" in row["model"]:
+            print(f"warning: unexpected suffix in model name {row['model']!r}", file=sys.stderr)
         have = models.get(row["model"])
         if have is None:
             models[row["model"]] = row
             continue
         have["regions"] = sorted(set(have["regions"]) | set(row["regions"]))
-        if row["hw_version"] > have["hw_version"]:
+        if version_key(row["model_version"]) > version_key(have["model_version"]):
             row["regions"] = have["regions"]
             models[row["model"]] = row
     return sorted(models.values(), key=lambda row: row["model"])

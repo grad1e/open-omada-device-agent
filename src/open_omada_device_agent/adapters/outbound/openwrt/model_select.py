@@ -54,7 +54,8 @@ def match_for(capabilities: PlatformCapabilities) -> ModelMatch | None:
 
 
 def resolve_model(settings: AgentSettings, capabilities: PlatformCapabilities) -> AgentSettings:
-    """With ``OMADA_DEVICE_MODEL=auto``, the closest model and its model version;
+    """With ``OMADA_DEVICE_MODEL=auto``, the closest model and the model and
+    hardware versions a real one sends;
     otherwise ``settings`` unchanged (the closest model is only logged)."""
     match = match_for(capabilities)
     if settings.model.strip().lower() != AUTO:
@@ -68,12 +69,18 @@ def resolve_model(settings: AgentSettings, capabilities: PlatformCapabilities) -
         log.warning(
             "OMADA_DEVICE_MODEL=auto: no radios found or no model with these bands; using EAP110"
         )
-        return replace(settings, model="EAP110", model_version="4.0")
+        return replace(settings, model="EAP110", model_version="4.0", hardware_version="4.0")
     log.info(
-        "OMADA_DEVICE_MODEL=auto: using %s %s (%s)",
+        "OMADA_DEVICE_MODEL=auto: using %s (model version %s, hardware version %s; %s)",
         match.model,
-        match.hw_version,
+        match.model_version,
+        match.hardware_version,
         "exact match" if match.exact else
         f"{match.shortfall} step(s) below the hardware, {match.overclaim} above",
     )
-    return replace(settings, model=match.model, model_version=match.hw_version)
+    return replace(
+        settings,
+        model=match.model,
+        model_version=match.model_version,
+        hardware_version=match.hardware_version,
+    )
