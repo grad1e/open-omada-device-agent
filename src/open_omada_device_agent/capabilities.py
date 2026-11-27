@@ -62,6 +62,11 @@ def ap_components_v2(
         components.update(
             {"lb": "1.0", "rssiFilter": "1.0", "qos": "1.0", "wlanAdv": "1.1"}
         )
+        # WLAN Schedule: without a scheduler component the controller marks
+        # the schedule "not supported" on Configuration Result, although it
+        # still sends it and the UCI adapter applies it (Observed: lab,
+        # Controller 6.3.0.111). 1.0 is the lowest version that clears it.
+        components["scheduler"] = "1.0"
     if capabilities.supports_rogue_ap_scan:
         # Controller 6.3.0.111 model templates list rogueAp=3.0 and
         # rogueApInform=2.0 for the EAP650; results travel in ``rogueApList``.

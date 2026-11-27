@@ -362,3 +362,14 @@ def test_session_tick_survives_an_exception(caplog):
     _tick(SimpleNamespace(configuration=SimpleNamespace(tick=boom)))
 
     assert "WLAN schedule check failed" in caplog.text
+
+
+def test_scheduler_component_is_reported_with_wlan_config():
+    from open_omada_device_agent.application.contracts import PlatformCapabilities
+    from open_omada_device_agent.capabilities import ap_components_v2
+
+    with_wlan = PlatformCapabilities(platform="openwrt", supports_wlan_config=True)
+    without = PlatformCapabilities(platform="openwrt", supports_wlan_config=False)
+
+    assert ap_components_v2(with_wlan)["scheduler"] == "1.0"
+    assert "scheduler" not in ap_components_v2(without)
