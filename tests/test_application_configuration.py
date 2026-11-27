@@ -171,3 +171,72 @@ def test_apply_configuration_accepts_ack_only_keys_when_lab_flag_is_enabled():
     )
 
     assert result.applied is True
+
+
+def test_apply_configuration_applies_supported_domains_before_unsupported_key_failure():
+    # Removing a MAC filter sends macFilterAssoc in the same SET as the SSID
+    # change; the SSID change must still be applied.
+    platform = RecordingPort(Result(changed=True))
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=lambda: "host capabilities",
+        platform_ports=(platform,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+            unhandled_keys=("macFilterAssoc",),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is True
+    assert len(platform.calls) == 1
+    assert result.error == "unsupported keys: macFilterAssoc; supported domains were applied first"
+
+
+def test_apply_configuration_reports_unsupported_keys_alone():
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=object,
+        platform_ports=(),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            unhandled_keys=("schedulerList", "macFilterList"),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is False
+    assert result.error == "unsupported keys: schedulerList,macFilterList"
+
+
+def test_apply_configuration_reports_adapter_failure_and_unsupported_keys():
+    failing = RecordingPort(Result(applied=False, error="platform rejected update"))
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=object,
+        platform_ports=(failing,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+            unhandled_keys=("macFilterAssoc",),
+        )
+    )
+
+    assert result.applied is False
+    assert result.error == "platform rejected update; unsupported keys: macFilterAssoc"
