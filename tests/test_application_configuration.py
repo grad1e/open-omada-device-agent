@@ -348,3 +348,26 @@ def test_apply_configuration_reports_soft_error_and_unsupported_keys():
     assert result.error == (
         "partial platform apply; unsupported keys: macFilterAssoc; supported domains were applied first"
     )
+
+
+def test_apply_configuration_reports_changes_made_by_the_failed_adapter():
+    # The UCI adapter refuses a SET but may still remove an open SSID.
+    failing = RecordingPort(Result(applied=False, changed=True, error="refused"))
+    use_case = ApplyDeviceConfiguration(
+        capability_detector=object,
+        platform_ports=(failing,),
+        command_ports=(),
+    )
+
+    result = use_case.execute(
+        AccessPointConfigUpdate(
+            sequence_id=1,
+            config_version=2,
+            config_version_inc=None,
+            radios=(RadioConfig(RadioBand.TWO_G),),
+        )
+    )
+
+    assert result.applied is False
+    assert result.changed is True
+    assert result.error == "refused"

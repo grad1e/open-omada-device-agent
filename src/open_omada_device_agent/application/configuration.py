@@ -67,9 +67,11 @@ class ApplyDeviceConfiguration:
         soft_errors: list[str] = []
         for port in ports:
             result = port.reconcile(update, capabilities)
+            # A refused port may still have changed the AP (the UCI adapter
+            # removes an open SSID it refuses), so count it before stopping.
+            changed = changed or result.changed
             if not result.applied:
                 return ApplyConfigurationResult(False, changed, "; ".join(filter(None, (result.error, unsupported))))
-            changed = changed or result.changed
             if result.error:
                 soft_errors.append(result.error)
         errors = list(soft_errors)
