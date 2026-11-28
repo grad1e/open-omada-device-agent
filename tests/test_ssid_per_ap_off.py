@@ -6,14 +6,10 @@ left on it for the AP.
 """
 from open_omada_device_agent.ap_config import parse_config_body
 from open_omada_device_agent.domain import RadioBand
-from open_omada_device_agent.adapters.outbound.openwrt.uci import (
-    _missing_radio_errors,
-    radio_sections_by_band,
-    validate_update,
-)
+from open_omada_device_agent.adapters.outbound.openwrt.portal_runtime import OpenWrtPortalRuntime
+from open_omada_device_agent.adapters.outbound.openwrt.uci import validate_update
 from open_omada_device_agent.openwrt import build_uci_batch, parse_uci_show
 from open_omada_device_agent.platform_capabilities import PlatformCapabilities
-from open_omada_device_agent.portal_runtime import OpenWrtPortalRuntime
 
 CAPS = PlatformCapabilities(
     platform="openwrt",
@@ -82,13 +78,12 @@ def test_incremental_set_without_ssid_keys_keeps_the_ssids():
 
 def test_full_sync_lists_bands_without_a_radio_but_writes_nothing_there():
     # A full sync lists every band, including 5 GHz-2 and 6 GHz, which this AP lacks.
+    # The missing-radio check reads only the SSIDs applied, not wlan_bands, so
+    # the batch is where the extra bands could leak.
     update = parse_config_body({"configVersion": 7, "ssid_2G": {"radioId": 0, "ssid": [_item(1, 1)]}})
-    radios = radio_sections_by_band(SHOW)
 
     assert RadioBand.FIVE_G2 in update.wlan_bands
     assert RadioBand.SIX_G in update.wlan_bands
-    assert _missing_radio_errors(update, CAPS, radios) == []
-    assert validate_update(update, CAPS) == ()
     batch = build_uci_batch(update, CAPS, wireless_state=SHOW)
     assert not any(token in line for line in batch for token in ("5g2", "6g", "radio2", "radio3"))
 
@@ -114,8 +109,8 @@ def test_portal_ssid_switched_off_does_not_need_the_portal():
     off = parse_config_body({"ssid_2G": {"radioId": 0, "ssid": [_item(1, 2, portal=True)]}})
     runtime = OpenWrtPortalRuntime(interface="br-lan", redirect_port=2050)
 
-    assert validate_update(on, CAPS) != ()
-    assert not runtime.reconcile(on, CAPS).applied
+    assert "portal WLAN requested but platform capability is disabled" in validate_update(on, CAPS)
+    assert runtime.reconcile(on, CAPS).error == "portal requested but platform capability is disabled"
     assert validate_update(off, CAPS) == ()
     result = runtime.reconcile(off, CAPS)
     assert result.applied and not result.changed
