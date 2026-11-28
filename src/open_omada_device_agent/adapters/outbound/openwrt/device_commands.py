@@ -276,14 +276,15 @@ class OpenWrtClientControlAdapter:
                 if item.unauthenticated
                 else self._authenticate_portal_client(mac, item.session_timeout_seconds)
             )
-            if not result.applied:
-                return result
+            # A failed step may follow steps that changed the AP; keep that.
             changed = changed or result.changed
+            if not result.applied:
+                return DeviceCommandResult(applied=False, changed=changed, error=result.error)
         if update.client_rate_config is not None:
             result = self._apply_client_rate_limits(update.client_rate_config)
-            if not result.applied:
-                return result
             changed = changed or result.changed
+            if not result.applied:
+                return DeviceCommandResult(applied=False, changed=changed, error=result.error)
         for operation in update.client_operations:
             code = operation.operation_code
             mac = MacAddress(operation.client_mac).value
@@ -298,9 +299,9 @@ class OpenWrtClientControlAdapter:
                 result = self._set_client_block(mac, blocked=False)
             else:
                 continue
-            if not result.applied:
-                return result
             changed = changed or result.changed
+            if not result.applied:
+                return DeviceCommandResult(applied=False, changed=changed, error=result.error)
         return DeviceCommandResult(applied=True, changed=changed)
 
     def _apply_client_rate_limits(

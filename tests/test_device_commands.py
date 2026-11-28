@@ -570,3 +570,35 @@ def test_openwrt_client_control_accepts_repeated_portal_login():
 
     assert result.applied is True
     assert result.changed is False
+
+
+def test_openwrt_client_control_keeps_changed_when_a_later_step_fails():
+    # Rate limits load, then blocking a client fails: the result still says
+    # the AP changed.
+    class FailingBlockRunner(RecordingRunner):
+        def run(self, args, *, input_text=None):
+            if tuple(args[:3]) == ("nft", "add", "element"):
+                self.calls.append((tuple(args), input_text))
+                return CommandResult(returncode=1, stderr="nft add failed")
+            return super().run(args, input_text=input_text)
+
+    update = parse_config_body(
+        {
+            "clientRateConfig": {
+                "action": 0,
+                "clientRateLimit": [{"mac": "02:aa:bb:cc:dd:01", "down": 1024, "up": 512}],
+            },
+            "clientOperation": [{"clientMac": "02:aa:bb:cc:dd:02", "operation": 0}],
+        }
+    )
+
+    result = OpenWrtClientControlAdapter(
+        FailingBlockRunner(),
+        hostapd_iface="wlan0",
+        block_interface="br-guest",
+        rate_limit_interface="wlan0",
+    ).reconcile(update, _caps(supports_client_rate_limits=True))
+
+    assert result.applied is False
+    assert result.changed is True
+    assert "nft add failed" in result.error
