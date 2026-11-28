@@ -602,3 +602,25 @@ def test_openwrt_client_control_keeps_changed_when_a_later_step_fails():
     assert result.applied is False
     assert result.changed is True
     assert "nft add failed" in result.error
+
+
+def test_openwrt_client_control_keeps_changed_when_block_table_was_created():
+    # The block table is created, then adding the client fails.
+    class FailingAddRunner(RecordingRunner):
+        def run(self, args, *, input_text=None):
+            if tuple(args[:3]) == ("nft", "add", "element"):
+                self.calls.append((tuple(args), input_text))
+                return CommandResult(returncode=1, stderr="nft add failed")
+            return super().run(args, input_text=input_text)
+
+    update = parse_config_body({"clientOperation": [{"clientMac": "02:aa:bb:cc:dd:02", "operation": 0}]})
+
+    result = OpenWrtClientControlAdapter(
+        FailingAddRunner(client_table_exists=False),
+        hostapd_iface="wlan0",
+        block_interface="br-guest",
+    ).reconcile(update, _caps())
+
+    assert result.applied is False
+    assert result.changed is True
+    assert "nft add failed" in result.error

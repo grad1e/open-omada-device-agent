@@ -431,9 +431,10 @@ class OpenWrtClientControlAdapter:
         )
         if result.returncode != 0:
             if not blocked and _is_missing_nft_element(result):
-                return DeviceCommandResult(applied=True, changed=False)
+                return DeviceCommandResult(applied=True, changed=ensured.changed)
             return DeviceCommandResult(
                 applied=False,
+                changed=ensured.changed,
                 error=(result.stderr or result.stdout or f"nft {action} element failed").strip(),
             )
         return DeviceCommandResult(applied=True, changed=True)
