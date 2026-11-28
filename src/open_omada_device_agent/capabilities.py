@@ -65,7 +65,7 @@ def ap_components_v2(
         # WLAN Schedule: without a scheduler component the controller marks
         # the schedule "not supported" on Configuration Result, although it
         # still sends it and the UCI adapter applies it (Observed: lab,
-        # Controller 6.3.0.111). 1.0 is the lowest version that clears it.
+        # Controller 6.3.0.111, version 1.0 clears it).
         components["scheduler"] = "1.0"
     if capabilities.supports_rogue_ap_scan:
         # Controller 6.3.0.111 model templates list rogueAp=3.0 and
